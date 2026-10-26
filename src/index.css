@@ -1,0 +1,144 @@
+@import "tailwindcss";
+
+/* ========================================
+   KAS INFORMATIKA - Custom CSS Variables
+   ======================================== */
+
+@layer base {
+  :root {
+    /* Brand Colors */
+    --color-warm-white: #F7F7F4;
+    --color-near-black: #191B19;
+    --color-forest: #174C3C;
+    --color-sage: #DDE8DF;
+    --color-amber-warning: #D97706;
+    --color-error-red: #B91C1C;
+
+    /* Semantic Colors */
+    --color-background: var(--color-warm-white);
+    --color-foreground: var(--color-near-black);
+    --color-primary: var(--color-forest);
+    --color-primary-light: var(--color-sage);
+    --color-warning: var(--color-amber-warning);
+    --color-error: var(--color-error-red);
+    --color-success: #059669;
+    --color-info: #0284C7;
+
+    /* Surface Colors */
+    --color-surface: #FFFFFF;
+    --color-surface-hover: #F0F0ED;
+    --color-surface-active: #E8E8E4;
+
+    /* Border Colors */
+    --color-border: #E2E2DD;
+    --color-border-focus: var(--color-forest);
+
+    /* Typography */
+    --font-sans: 'Plus Jakarta Sans', 'Inter', system-ui, -apple-system, sans-serif;
+    --font-display: 'Plus Jakarta Sans', system-ui, sans-serif;
+    --font-body: 'Inter', system-ui, sans-serif;
+
+    /* Spacing */
+    --sidebar-width: 260px;
+    --header-height: 64px;
+
+    /* Transitions */
+    --transition-fast: 150ms ease;
+    --transition-normal: 200ms ease;
+    --transition-slow: 300ms ease;
+
+    /* Border Radius */
+    --radius-sm: 0.375rem;
+    --radius-md: 0.5rem;
+    --radius-lg: 0.75rem;
+    --radius-xl: 1rem;
+    --radius-full: 9999px;
+  }
+
+  /* Base Styles */
+  html {
+    font-family: var(--font-sans);
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    line-height: 1.6;
+  }
+
+  /* Scrollbar Styling */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background-color: rgba(25, 27, 25, 0.15);
+    border-radius: var(--radius-full);
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(25, 27, 25, 0.25);
+  }
+
+  /* Focus Styles */
+  *:focus-visible {
+    outline: 2px solid var(--color-forest);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
+
+  /* Selection */
+  ::selection {
+    background-color: var(--color-sage);
+    color: var(--color-near-black);
+  }
+}
+
+/* ========================================
+   Utility Classes
+   ======================================== */
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .animate-in {
+    animation: fadeIn var(--transition-normal) forwards;
+  }
+
+  .glass {
+    background: rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+}
+
+/* ========================================
+   Print Styles
+   ======================================== */
+
+@media print {
+  body {
+    background: white !important;
+    color: black !important;
+  }
+
+  nav,
+  .no-print {
+    display: none !important;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+}
