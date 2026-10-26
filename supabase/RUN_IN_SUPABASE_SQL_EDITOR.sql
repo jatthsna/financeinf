@@ -1187,12 +1187,12 @@ ON CONFLICT (id) DO UPDATE SET
     role = EXCLUDED.role;
 
 -- Automatically enroll all students into 2026/2027 Academic Year
-INSERT INTO student_memberships (student_id, academic_year_id, status)
+INSERT INTO student_memberships (student_id, academic_year_id, is_active)
 SELECT 
     p.id,
     ay.id,
-    'ACTIVE'
+    true
 FROM profiles p
 CROSS JOIN academic_years ay
-WHERE ay.year_code = '2026'
+WHERE ay.year_code LIKE '2026%' OR ay.status = 'ACTIVE'
 ON CONFLICT (student_id, academic_year_id) DO NOTHING;
