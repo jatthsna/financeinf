@@ -12,6 +12,50 @@
 -- ============================================================================
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+-- ============================================================================
+-- SAFE CLEANUP (Memastikan eksekusi ulang berjalan bersih tanpa konflik)
+-- ============================================================================
+DROP TABLE IF EXISTS 
+    profiles, 
+    academic_years, 
+    student_memberships, 
+    billing_settings, 
+    contribution_types, 
+    contribution_periods, 
+    student_obligations, 
+    payments, 
+    payment_allocations, 
+    payment_evidence, 
+    cash_accounts, 
+    activities, 
+    activity_budgets, 
+    income_records, 
+    expenses, 
+    account_transfers, 
+    app_settings, 
+    user_invitations, 
+    audit_logs, 
+    fund_sources 
+CASCADE;
+
+DROP TYPE IF EXISTS 
+    user_role, 
+    academic_year_status, 
+    contribution_category, 
+    contribution_frequency, 
+    obligation_status, 
+    payment_method, 
+    payment_status, 
+    approval_status, 
+    expense_category, 
+    income_category, 
+    activity_status, 
+    audit_action, 
+    invitation_status, 
+    account_type, 
+    transfer_status 
+CASCADE;
+
 
 -- ============================================================================
 -- CUSTOM TYPES
@@ -276,10 +320,12 @@ CREATE INDEX idx_evidence_payment ON payment_evidence(payment_id);
 -- ============================================================================
 CREATE TABLE cash_accounts (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    name TEXT NOT NULL,
+    account_name TEXT NOT NULL,
     account_type account_type NOT NULL DEFAULT 'CASH',
+    account_number TEXT,
     description TEXT,
     opening_balance BIGINT NOT NULL DEFAULT 0,
+    current_balance BIGINT NOT NULL DEFAULT 0,
     is_active BOOLEAN NOT NULL DEFAULT true,
     created_by UUID REFERENCES profiles(id),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),

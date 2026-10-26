@@ -253,10 +253,12 @@ CREATE INDEX idx_evidence_payment ON payment_evidence(payment_id);
 -- ============================================================================
 CREATE TABLE cash_accounts (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    name TEXT NOT NULL,
+    account_name TEXT NOT NULL,
     account_type account_type NOT NULL DEFAULT 'CASH',
+    account_number TEXT,
     description TEXT,
     opening_balance BIGINT NOT NULL DEFAULT 0,
+    current_balance BIGINT NOT NULL DEFAULT 0,
     is_active BOOLEAN NOT NULL DEFAULT true,
     created_by UUID REFERENCES profiles(id),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
