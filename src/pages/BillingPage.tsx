@@ -187,27 +187,49 @@ export default function BillingPage() {
       if (!dueDate) throw new Error('Tentukan tanggal jatuh tempo');
       if (eligibleMembers.length === 0) throw new Error('Tidak ada mahasiswa yang ditagih');
 
-      // 1. Create a contribution period first
-      const { data: periodData, error: periodError } = await supabase
-        .from('contribution_periods')
+      // 1. Create a contribution period first (aligned with database schema)
+      let periodId: string | null = null;
+      const today = new Date().toISOString().split('T')[0];
+      const validStartDate = dueDate < today ? dueDate : today;
+
+      const { data: periodData, error: periodError } = await (supabase.from('contribution_periods') as any)
         .insert([
           {
             contribution_type_id: selectedContributionId,
-            academic_year_id: activeYear.id,
-            name: billingPeriodName || 'Tagihan Periode',
-            due_date: dueDate,
+            period_label: billingPeriodName || 'Tagihan Periode',
+            start_date: validStartDate,
+            end_date: dueDate,
+            deadline: dueDate,
+            amount: customAmount,
+            is_generated: true,
           },
         ])
-        .select()
+        .select('id')
         .single();
 
-      if (periodError) throw periodError;
+      if (periodError) {
+        // If it already exists for the same type & dates, fetch existing
+        const { data: existingPeriod } = await (supabase.from('contribution_periods') as any)
+          .select('id')
+          .eq('contribution_type_id', selectedContributionId)
+          .eq('start_date', validStartDate)
+          .eq('end_date', dueDate)
+          .maybeSingle();
+
+        if (existingPeriod?.id) {
+          periodId = existingPeriod.id;
+        } else {
+          console.warn('Gagal membuat period, melanjutkan penerbitan tagihan:', periodError);
+        }
+      } else if (periodData?.id) {
+        periodId = periodData.id;
+      }
 
       // 2. Generate student obligations in bulk
       const newObligations = eligibleMembers.map((m) => ({
         student_id: m.student_id,
         contribution_type_id: selectedContributionId,
-        contribution_period_id: periodData.id,
+        contribution_period_id: periodId,
         academic_year_id: activeYear.id,
         amount: customAmount,
         original_amount: customAmount,
