@@ -1,6 +1,7 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { ProtectedRoute } from '@/components/layout/ProtectedRoute';
+import PublicTransparencyPage from '@/pages/PublicTransparencyPage';
 import LoginPage from '@/pages/LoginPage';
 import RegisterPage from '@/pages/RegisterPage';
 import ResetPasswordPage from '@/pages/ResetPasswordPage';
@@ -28,16 +29,19 @@ export default function App() {
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
 
+      {/* Public Transparency Portal (Accessible without login) */}
+      <Route path="/" element={<PublicTransparencyPage />} />
+      <Route path="/transparansi" element={<PublicTransparencyPage />} />
+
+      {/* Authenticated Application Routes */}
       <Route
-        path="/"
         element={
           <ProtectedRoute>
             <AppLayout />
           </ProtectedRoute>
         }
       >
-        <Route index element={<Navigate to="/dashboard" replace />} />
-        <Route path="dashboard" element={<DashboardPage />} />
+        <Route path="/dashboard" element={<DashboardPage />} />
 
         {/* Student routes */}
         <Route

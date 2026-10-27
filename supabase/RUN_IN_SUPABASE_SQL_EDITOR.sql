@@ -224,22 +224,23 @@ CREATE INDEX idx_periods_deadline ON contribution_periods(deadline);
 -- ============================================================================
 CREATE TABLE student_obligations (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    student_id UUID NOT NULL REFERENCES profiles(id) ON DELETE RESTRICT,
-    contribution_period_id UUID NOT NULL REFERENCES contribution_periods(id) ON DELETE RESTRICT,
+    student_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    contribution_type_id UUID REFERENCES contribution_types(id) ON DELETE RESTRICT,
+    contribution_period_id UUID REFERENCES contribution_periods(id) ON DELETE SET NULL,
     academic_year_id UUID NOT NULL REFERENCES academic_years(id) ON DELETE RESTRICT,
-    original_amount BIGINT NOT NULL CHECK (original_amount > 0),
+    amount BIGINT NOT NULL CHECK (amount > 0),
+    original_amount BIGINT,
     paid_amount BIGINT NOT NULL DEFAULT 0 CHECK (paid_amount >= 0),
-    remaining_amount BIGINT NOT NULL GENERATED ALWAYS AS (original_amount - paid_amount) STORED,
+    remaining_amount BIGINT NOT NULL DEFAULT 0 CHECK (remaining_amount >= 0),
+    due_date DATE NOT NULL,
+    deadline DATE,
     status obligation_status NOT NULL DEFAULT 'UNPAID',
-    deadline DATE NOT NULL,
     is_excluded BOOLEAN NOT NULL DEFAULT false,
     exclusion_reason TEXT,
     excluded_by UUID REFERENCES profiles(id),
     notes TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CONSTRAINT unique_student_obligation UNIQUE (student_id, contribution_period_id),
-    CONSTRAINT valid_paid_amount CHECK (paid_amount <= original_amount)
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX idx_obligations_student ON student_obligations(student_id);
@@ -253,27 +254,29 @@ CREATE INDEX idx_obligations_deadline ON student_obligations(deadline);
 -- ============================================================================
 CREATE TABLE payments (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    reference_number TEXT NOT NULL UNIQUE,
-    student_id UUID NOT NULL REFERENCES profiles(id) ON DELETE RESTRICT,
+    receipt_number TEXT NOT NULL UNIQUE,
+    reference_number TEXT,
+    payer_id UUID REFERENCES profiles(id) ON DELETE RESTRICT,
+    student_id UUID REFERENCES profiles(id) ON DELETE RESTRICT,
     academic_year_id UUID NOT NULL REFERENCES academic_years(id) ON DELETE RESTRICT,
     amount BIGINT NOT NULL CHECK (amount > 0),
     payment_method payment_method NOT NULL,
-    payment_date DATE NOT NULL,
+    payment_date DATE NOT NULL DEFAULT CURRENT_DATE,
     status payment_status NOT NULL DEFAULT 'PENDING',
     notes TEXT,
-    -- For CASH payments
-    recorded_by UUID REFERENCES profiles(id),
-    -- For QRIS payments
+    -- QRIS & Verification
     qris_reference TEXT,
-    submitted_at TIMESTAMPTZ,
-    -- For approval/rejection
+    submitted_at TIMESTAMPTZ DEFAULT now(),
+    verified_by UUID REFERENCES profiles(id),
+    verified_at TIMESTAMPTZ,
     reviewed_by UUID REFERENCES profiles(id),
     reviewed_at TIMESTAMPTZ,
     rejection_reason TEXT,
-    -- For reversal
+    -- Reversal & audit
     reversed_by UUID REFERENCES profiles(id),
     reversed_at TIMESTAMPTZ,
     reversal_reason TEXT,
+    created_by UUID REFERENCES profiles(id),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -290,8 +293,9 @@ CREATE INDEX idx_payments_reference ON payments(reference_number);
 -- ============================================================================
 CREATE TABLE payment_allocations (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    payment_id UUID NOT NULL REFERENCES payments(id) ON DELETE RESTRICT,
-    obligation_id UUID NOT NULL REFERENCES student_obligations(id) ON DELETE RESTRICT,
+    payment_id UUID NOT NULL REFERENCES payments(id) ON DELETE CASCADE,
+    student_obligation_id UUID REFERENCES student_obligations(id) ON DELETE CASCADE,
+    obligation_id UUID REFERENCES student_obligations(id) ON DELETE CASCADE,
     amount BIGINT NOT NULL CHECK (amount > 0),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -308,6 +312,7 @@ CREATE TABLE payment_evidence (
     file_path TEXT NOT NULL,
     file_name TEXT NOT NULL,
     file_type TEXT NOT NULL,
+    mime_type TEXT,
     file_size BIGINT NOT NULL CHECK (file_size > 0 AND file_size <= 10485760), -- Max 10MB
     uploaded_by UUID NOT NULL REFERENCES profiles(id),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -365,9 +370,9 @@ ALTER TABLE contribution_types
 CREATE TABLE activity_budgets (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     activity_id UUID NOT NULL REFERENCES activities(id) ON DELETE CASCADE,
-    category expense_category NOT NULL,
-    description TEXT NOT NULL,
-    budgeted_amount BIGINT NOT NULL CHECK (budgeted_amount >= 0),
+    category TEXT NOT NULL DEFAULT 'KEGIATAN',
+    description TEXT NOT NULL DEFAULT 'Rencana Anggaran Kegiatan',
+    budgeted_amount BIGINT NOT NULL DEFAULT 0 CHECK (budgeted_amount >= 0),
     actual_amount BIGINT NOT NULL DEFAULT 0 CHECK (actual_amount >= 0),
     notes TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -382,9 +387,11 @@ CREATE INDEX idx_activity_budgets_activity ON activity_budgets(activity_id);
 CREATE TABLE income_records (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     reference_number TEXT NOT NULL UNIQUE,
-    date DATE NOT NULL,
+    date DATE NOT NULL DEFAULT CURRENT_DATE,
     amount BIGINT NOT NULL CHECK (amount > 0),
-    category income_category NOT NULL,
+    income_category income_category NOT NULL DEFAULT 'LAINNYA',
+    category income_category,
+    source_payer TEXT,
     source TEXT,
     description TEXT NOT NULL,
     academic_year_id UUID NOT NULL REFERENCES academic_years(id) ON DELETE RESTRICT,
@@ -392,8 +399,8 @@ CREATE TABLE income_records (
     account_id UUID REFERENCES cash_accounts(id) ON DELETE SET NULL,
     evidence_path TEXT,
     evidence_name TEXT,
-    status approval_status NOT NULL DEFAULT 'DRAFT',
-    recorded_by UUID NOT NULL REFERENCES profiles(id),
+    status approval_status NOT NULL DEFAULT 'POSTED',
+    recorded_by UUID REFERENCES profiles(id),
     approved_by UUID REFERENCES profiles(id),
     approved_at TIMESTAMPTZ,
     notes TEXT,
@@ -413,20 +420,22 @@ CREATE INDEX idx_income_activity ON income_records(activity_id);
 CREATE TABLE expenses (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     reference_number TEXT NOT NULL UNIQUE,
-    transaction_date DATE NOT NULL,
-    category expense_category NOT NULL,
+    transaction_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    expense_category expense_category NOT NULL DEFAULT 'OPERASIONAL',
+    category expense_category,
     description TEXT NOT NULL,
     amount BIGINT NOT NULL CHECK (amount > 0),
-    payment_method payment_method,
+    payment_method payment_method DEFAULT 'CASH',
     academic_year_id UUID NOT NULL REFERENCES academic_years(id) ON DELETE RESTRICT,
     activity_id UUID REFERENCES activities(id) ON DELETE SET NULL,
     budget_item_id UUID REFERENCES activity_budgets(id) ON DELETE SET NULL,
     account_id UUID REFERENCES cash_accounts(id) ON DELETE SET NULL,
+    vendor_recipient TEXT,
     vendor TEXT,
     receipt_path TEXT,
     receipt_name TEXT,
-    status approval_status NOT NULL DEFAULT 'DRAFT',
-    recorded_by UUID NOT NULL REFERENCES profiles(id),
+    status approval_status NOT NULL DEFAULT 'POSTED',
+    recorded_by UUID REFERENCES profiles(id),
     approved_by UUID REFERENCES profiles(id),
     approved_at TIMESTAMPTZ,
     notes TEXT,
@@ -1100,7 +1109,7 @@ CREATE POLICY transfers_update ON account_transfers
 -- ============================================================================
 -- All authenticated users can read non-sensitive settings
 CREATE POLICY settings_select ON app_settings
-    FOR SELECT USING (auth.uid() IS NOT NULL);
+    FOR SELECT USING (true);
 
 -- Only admin can manage settings
 CREATE POLICY settings_insert ON app_settings
@@ -1196,3 +1205,301 @@ FROM profiles p
 CROSS JOIN academic_years ay
 WHERE ay.year_code LIKE '2026%' OR ay.status = 'ACTIVE'
 ON CONFLICT (student_id, academic_year_id) DO NOTHING;
+
+-- ============================================================================
+-- ALIAS SYNCHRONIZATION & OBLIGATION CALCULATION TRIGGERS
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION sync_obligation_columns()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+    NEW.original_amount := COALESCE(NEW.original_amount, NEW.amount);
+    NEW.amount := COALESCE(NEW.amount, NEW.original_amount);
+    NEW.deadline := COALESCE(NEW.deadline, NEW.due_date);
+    NEW.due_date := COALESCE(NEW.due_date, NEW.deadline);
+    NEW.remaining_amount := GREATEST(0, NEW.amount - COALESCE(NEW.paid_amount, 0));
+    IF NEW.remaining_amount = 0 THEN
+        NEW.status := 'PAID';
+    ELSIF NEW.paid_amount > 0 AND NEW.remaining_amount > 0 THEN
+        NEW.status := 'PARTIALLY_PAID';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_sync_obligation ON student_obligations;
+CREATE TRIGGER trg_sync_obligation
+    BEFORE INSERT OR UPDATE ON student_obligations
+    FOR EACH ROW EXECUTE FUNCTION sync_obligation_columns();
+
+CREATE OR REPLACE FUNCTION sync_payment_columns()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+    NEW.reference_number := COALESCE(NEW.reference_number, NEW.receipt_number);
+    NEW.receipt_number := COALESCE(NEW.receipt_number, NEW.reference_number);
+    NEW.student_id := COALESCE(NEW.student_id, NEW.payer_id);
+    NEW.payer_id := COALESCE(NEW.payer_id, NEW.student_id);
+    NEW.reviewed_by := COALESCE(NEW.reviewed_by, NEW.verified_by);
+    NEW.verified_by := COALESCE(NEW.verified_by, NEW.reviewed_by);
+    NEW.reviewed_at := COALESCE(NEW.reviewed_at, NEW.verified_at);
+    NEW.verified_at := COALESCE(NEW.verified_at, NEW.reviewed_at);
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_sync_payment ON payments;
+CREATE TRIGGER trg_sync_payment
+    BEFORE INSERT OR UPDATE ON payments
+    FOR EACH ROW EXECUTE FUNCTION sync_payment_columns();
+
+CREATE OR REPLACE FUNCTION sync_allocation_columns()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+    NEW.student_obligation_id := COALESCE(NEW.student_obligation_id, NEW.obligation_id);
+    NEW.obligation_id := COALESCE(NEW.obligation_id, NEW.student_obligation_id);
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_sync_alloc ON payment_allocations;
+CREATE TRIGGER trg_sync_alloc
+    BEFORE INSERT OR UPDATE ON payment_allocations
+    FOR EACH ROW EXECUTE FUNCTION sync_allocation_columns();
+
+CREATE OR REPLACE FUNCTION sync_evidence_columns()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+    NEW.file_type := COALESCE(NEW.file_type, NEW.mime_type, 'image/jpeg');
+    NEW.mime_type := COALESCE(NEW.mime_type, NEW.file_type, 'image/jpeg');
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_sync_evidence ON payment_evidence;
+CREATE TRIGGER trg_sync_evidence
+    BEFORE INSERT OR UPDATE ON payment_evidence
+    FOR EACH ROW EXECUTE FUNCTION sync_evidence_columns();
+
+CREATE OR REPLACE FUNCTION sync_expense_columns()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+    NEW.category := COALESCE(NEW.category, NEW.expense_category);
+    NEW.expense_category := COALESCE(NEW.expense_category, NEW.category);
+    NEW.vendor := COALESCE(NEW.vendor, NEW.vendor_recipient);
+    NEW.vendor_recipient := COALESCE(NEW.vendor_recipient, NEW.vendor);
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_sync_expense ON expenses;
+CREATE TRIGGER trg_sync_expense
+    BEFORE INSERT OR UPDATE ON expenses
+    FOR EACH ROW EXECUTE FUNCTION sync_expense_columns();
+
+CREATE OR REPLACE FUNCTION sync_income_columns()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+    NEW.category := COALESCE(NEW.category, NEW.income_category);
+    NEW.income_category := COALESCE(NEW.income_category, NEW.category);
+    NEW.source := COALESCE(NEW.source, NEW.source_payer);
+    NEW.source_payer := COALESCE(NEW.source_payer, NEW.source);
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_sync_income ON income_records;
+CREATE TRIGGER trg_sync_income
+    BEFORE INSERT OR UPDATE ON income_records
+    FOR EACH ROW EXECUTE FUNCTION sync_income_columns();
+
+-- ============================================================================
+-- PUBLIC FINANCIAL OVERVIEW FUNCTION (FOR PUBLIC TRANSPARENCY DASHBOARD)
+-- Allows unauthenticated visitors (anon) to view aggregated prodi financial data
+-- ============================================================================
+CREATE OR REPLACE FUNCTION get_public_financial_overview(p_academic_year_id UUID DEFAULT NULL)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_year_id UUID;
+    v_total_verified_payments BIGINT := 0;
+    v_total_other_income BIGINT := 0;
+    v_total_income BIGINT := 0;
+    v_total_expenses BIGINT := 0;
+    v_cash_balance BIGINT := 0;
+    v_total_obligations BIGINT := 0;
+    v_total_obligations_paid BIGINT := 0;
+    v_compliance_rate NUMERIC := 0;
+    v_student_count INT := 0;
+    v_recent_expenses JSONB := '[]'::jsonb;
+    v_recent_income JSONB := '[]'::jsonb;
+    v_expense_categories JSONB := '[]'::jsonb;
+    v_active_activities JSONB := '[]'::jsonb;
+    v_year_name TEXT := '';
+BEGIN
+    -- Determine target academic year
+    IF p_academic_year_id IS NOT NULL THEN
+        v_year_id := p_academic_year_id;
+    ELSE
+        SELECT id, display_name INTO v_year_id, v_year_name
+        FROM academic_years
+        WHERE status = 'ACTIVE'
+        ORDER BY start_date DESC
+        LIMIT 1;
+    END IF;
+
+    IF v_year_id IS NULL THEN
+        SELECT id, display_name INTO v_year_id, v_year_name
+        FROM academic_years
+        ORDER BY start_date DESC
+        LIMIT 1;
+    END IF;
+
+    IF v_year_name = '' OR v_year_name IS NULL THEN
+        SELECT display_name INTO v_year_name FROM academic_years WHERE id = v_year_id;
+    END IF;
+
+    -- 1. Total verified payments from students (CASH & QRIS APPROVED)
+    SELECT COALESCE(SUM(amount), 0)
+    INTO v_total_verified_payments
+    FROM payments
+    WHERE (academic_year_id = v_year_id OR v_year_id IS NULL)
+      AND status = 'APPROVED';
+
+    -- 2. Total other legitimate income (Donasi, Sponsor, etc.)
+    SELECT COALESCE(SUM(amount), 0)
+    INTO v_total_other_income
+    FROM income_records
+    WHERE (academic_year_id = v_year_id OR v_year_id IS NULL)
+      AND status IN ('APPROVED', 'POSTED');
+
+    v_total_income := v_total_verified_payments + v_total_other_income;
+
+    -- 3. Total expenses
+    SELECT COALESCE(SUM(amount), 0)
+    INTO v_total_expenses
+    FROM expenses
+    WHERE (academic_year_id = v_year_id OR v_year_id IS NULL)
+      AND status IN ('APPROVED', 'POSTED');
+
+    -- Current net balance
+    v_cash_balance := v_total_income - v_total_expenses;
+
+    -- 4. Obligation compliance
+    SELECT 
+        COALESCE(SUM(amount), 0),
+        COALESCE(SUM(paid_amount), 0)
+    INTO v_total_obligations, v_total_obligations_paid
+    FROM student_obligations
+    WHERE (academic_year_id = v_year_id OR v_year_id IS NULL)
+      AND is_excluded = false;
+
+    IF v_total_obligations > 0 THEN
+        v_compliance_rate := ROUND((v_total_obligations_paid::numeric / v_total_obligations::numeric) * 100, 1);
+    ELSE
+        v_compliance_rate := 100.0;
+    END IF;
+
+    -- Total active students
+    SELECT COUNT(DISTINCT student_id)
+    INTO v_student_count
+    FROM student_memberships
+    WHERE (academic_year_id = v_year_id OR v_year_id IS NULL)
+      AND is_active = true;
+
+    -- 5. Recent verified public expenses
+    SELECT COALESCE(jsonb_agg(e), '[]'::jsonb)
+    INTO v_recent_expenses
+    FROM (
+        SELECT 
+            id,
+            reference_number,
+            transaction_date,
+            expense_category,
+            description,
+            amount,
+            vendor_recipient,
+            created_at
+        FROM expenses
+        WHERE (academic_year_id = v_year_id OR v_year_id IS NULL)
+          AND status IN ('APPROVED', 'POSTED')
+        ORDER BY transaction_date DESC, created_at DESC
+        LIMIT 6
+    ) e;
+
+    -- 6. Recent verified public income entries
+    SELECT COALESCE(jsonb_agg(i), '[]'::jsonb)
+    INTO v_recent_income
+    FROM (
+        SELECT 
+            id,
+            reference_number,
+            date,
+            income_category,
+            description,
+            amount,
+            source_payer,
+            created_at
+        FROM income_records
+        WHERE (academic_year_id = v_year_id OR v_year_id IS NULL)
+          AND status IN ('APPROVED', 'POSTED')
+        ORDER BY date DESC, created_at DESC
+        LIMIT 6
+    ) i;
+
+    -- 7. Expense breakdown by category
+    SELECT COALESCE(jsonb_agg(cat), '[]'::jsonb)
+    INTO v_expense_categories
+    FROM (
+        SELECT 
+            expense_category as category,
+            COUNT(*) as count,
+            COALESCE(SUM(amount), 0) as total_amount
+        FROM expenses
+        WHERE (academic_year_id = v_year_id OR v_year_id IS NULL)
+          AND status IN ('APPROVED', 'POSTED')
+        GROUP BY expense_category
+        ORDER BY total_amount DESC
+    ) cat;
+
+    -- 8. Activities list
+    SELECT COALESCE(jsonb_agg(act), '[]'::jsonb)
+    INTO v_active_activities
+    FROM (
+        SELECT 
+            id,
+            name,
+            description,
+            start_date,
+            end_date,
+            status,
+            total_budget
+        FROM activities
+        WHERE (academic_year_id = v_year_id OR v_year_id IS NULL)
+        ORDER BY created_at DESC
+        LIMIT 6
+    ) act;
+
+    RETURN jsonb_build_object(
+        'academic_year_id', v_year_id,
+        'academic_year_name', v_year_name,
+        'total_income', v_total_income,
+        'student_payments', v_total_verified_payments,
+        'other_income', v_total_other_income,
+        'total_expenses', v_total_expenses,
+        'cash_balance', v_cash_balance,
+        'total_obligations', v_total_obligations,
+        'total_obligations_paid', v_total_obligations_paid,
+        'compliance_rate', v_compliance_rate,
+        'student_count', v_student_count,
+        'recent_expenses', v_recent_expenses,
+        'recent_income', v_recent_income,
+        'expense_categories', v_expense_categories,
+        'activities', v_active_activities
+    );
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION get_public_financial_overview(UUID) TO anon, authenticated;

@@ -174,10 +174,13 @@ export default function ExpensesPage() {
       const { error } = await supabase.from('expenses').insert([
         {
           reference_number: refNo,
+          transaction_date: new Date().toISOString().split('T')[0],
           academic_year_id: activeYear.id,
           amount: payload.amount,
           expense_category: payload.expense_category,
+          category: payload.expense_category,
           vendor_recipient: payload.vendor_recipient.trim() || null,
+          vendor: payload.vendor_recipient.trim() || null,
           description: payload.description.trim(),
           activity_id: payload.activity_id || null,
           status: 'POSTED',

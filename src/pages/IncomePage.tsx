@@ -138,10 +138,13 @@ export default function IncomePage() {
       const { error } = await supabase.from('income_records').insert([
         {
           reference_number: refNo,
+          date: new Date().toISOString().split('T')[0],
           academic_year_id: activeYear.id,
           amount: payload.amount,
           income_category: payload.income_category,
+          category: payload.income_category,
           source_payer: payload.source_payer.trim(),
+          source: payload.source_payer.trim(),
           description: payload.description.trim(),
           activity_id: payload.activity_id || null,
           status: 'POSTED',

@@ -27,7 +27,7 @@ function getMobileNavItems(
 ): MobileNavItem[] {
   if (isMahasiswa) {
     return [
-      { label: 'Beranda', icon: Home, href: '/' },
+      { label: 'Dashboard', icon: Home, href: '/dashboard' },
       { label: 'Tagihan', icon: Receipt, href: '/tagihan-saya' },
       { label: 'Bayar', icon: CreditCard, href: '/pembayaran-saya' },
     ];
@@ -35,7 +35,7 @@ function getMobileNavItems(
 
   if (isBendahara) {
     return [
-      { label: 'Beranda', icon: Home, href: '/' },
+      { label: 'Dashboard', icon: Home, href: '/dashboard' },
       { label: 'Tagihan', icon: FileText, href: '/tagihan' },
       { label: 'Bayar', icon: Wallet, href: '/pembayaran' },
       { label: 'Laporan', icon: BarChart, href: '/laporan' },
@@ -44,7 +44,7 @@ function getMobileNavItems(
 
   if (isAdmin) {
     return [
-      { label: 'Beranda', icon: Home, href: '/' },
+      { label: 'Dashboard', icon: Home, href: '/dashboard' },
       { label: 'Tagihan', icon: FileText, href: '/tagihan' },
       { label: 'Bayar', icon: Wallet, href: '/pembayaran' },
       { label: 'Laporan', icon: BarChart, href: '/laporan' },
@@ -53,7 +53,7 @@ function getMobileNavItems(
   }
 
   // Fallback
-  return [{ label: 'Beranda', icon: Home, href: '/' }];
+  return [{ label: 'Dashboard', icon: Home, href: '/dashboard' }];
 }
 
 export function MobileNav() {

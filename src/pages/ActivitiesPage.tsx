@@ -122,7 +122,8 @@ export default function ActivitiesPage() {
         const { error: bErr } = await supabase.from('activity_budgets').insert([
           {
             activity_id: actData.id,
-            category: 'PAGU_TOTAL',
+            category: 'KEGIATAN',
+            description: `Pagu anggaran awal ${payload.name.trim()}`,
             budgeted_amount: payload.budget_plan,
             notes: 'Pagu anggaran awal yang disetujui',
           },

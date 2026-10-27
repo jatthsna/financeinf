@@ -35,7 +35,12 @@ function AdminDashboard() {
       const yearId = activeYear?.id;
       if (!yearId) return null;
 
-      const [incomeRes, expenseRes, pendingObligationsRes, pendingQrisRes] = await Promise.all([
+      const [paymentsRes, incomeRes, expenseRes, pendingObligationsRes, pendingQrisRes] = await Promise.all([
+        supabase
+          .from('payments')
+          .select('amount')
+          .eq('academic_year_id', yearId)
+          .eq('status', 'APPROVED'),
         supabase
           .from('income_records')
           .select('amount')
@@ -59,10 +64,15 @@ function AdminDashboard() {
           .eq('status', 'PENDING'),
       ]);
 
-      const totalIncome = (incomeRes.data ?? []).reduce(
-        (sum, r) => sum + Number(r.amount),
+      const studentFeeIncome = (paymentsRes.data ?? []).reduce(
+        (sum, r) => sum + Number(r.amount || 0),
         0
       );
+      const otherIncome = (incomeRes.data ?? []).reduce(
+        (sum, r) => sum + Number(r.amount || 0),
+        0
+      );
+      const totalIncome = studentFeeIncome + otherIncome;
       const totalExpense = (expenseRes.data ?? []).reduce(
         (sum, r) => sum + Number(r.amount),
         0
@@ -176,7 +186,7 @@ function AdminDashboard() {
                   >
                     <div>
                       <p className="text-sm font-semibold text-[#191B19]">
-                        {tx.profiles?.full_name ?? 'Mahasiswa'}
+                        {tx.profiles?.full_name ?? tx.payer?.full_name ?? tx.student?.full_name ?? 'Mahasiswa'}
                       </p>
                       <p className="text-xs text-stone-500">
                         {formatDate(tx.created_at, 'with-time')} · Metode: {tx.payment_method} · No: {tx.receipt_number || '-'}

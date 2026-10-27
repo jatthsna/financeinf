@@ -262,7 +262,9 @@ export default function PaymentsPage() {
         .insert([
           {
             receipt_number: receiptNumber,
+            reference_number: receiptNumber,
             payer_id: selectedStudentId,
+            student_id: selectedStudentId,
             academic_year_id: activeYear.id,
             amount: cashAmount,
             payment_method: 'CASH',
@@ -288,6 +290,7 @@ export default function PaymentsPage() {
               {
                 payment_id: paymentRecord.id,
                 student_obligation_id: obligationId,
+                obligation_id: obligationId,
                 amount: allocAmount,
               },
             ]);

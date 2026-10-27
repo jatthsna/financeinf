@@ -17,6 +17,7 @@ import {
   Shield,
   LogOut,
   X,
+  Globe,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import type { UserRole } from '@/types';
@@ -45,7 +46,8 @@ const navSections: NavSection[] = [
     title: null,
     roles: 'all',
     items: [
-      { label: 'Beranda', icon: Home, href: '/dashboard', roles: 'all' },
+      { label: 'Dashboard', icon: Home, href: '/dashboard', roles: 'all' },
+      { label: 'Portal Publik', icon: Globe, href: '/transparansi', roles: 'all' },
       { label: 'Tagihan Saya', icon: Receipt, href: '/tagihan-saya', roles: ['MAHASISWA'] },
       { label: 'Pembayaran Saya', icon: CreditCard, href: '/pembayaran-saya', roles: ['MAHASISWA'] },
     ],

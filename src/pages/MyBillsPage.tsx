@@ -156,7 +156,9 @@ export default function MyBillsPage() {
         .insert([
           {
             receipt_number: transactionRef.trim(),
+            reference_number: transactionRef.trim(),
             payer_id: user.id,
+            student_id: user.id,
             academic_year_id: activeYear.id,
             amount: claimAmount,
             payment_method: 'QRIS',
@@ -176,6 +178,7 @@ export default function MyBillsPage() {
         {
           payment_id: paymentRecord.id,
           student_obligation_id: selectedBill.id,
+          obligation_id: selectedBill.id,
           amount: claimAmount,
         },
       ]);
@@ -187,6 +190,7 @@ export default function MyBillsPage() {
           file_path: filePath,
           file_name: proofFile.name,
           mime_type: proofFile.type,
+          file_type: proofFile.type,
           file_size: proofFile.size,
           uploaded_by: user.id,
         },

@@ -209,9 +209,11 @@ export default function BillingPage() {
         contribution_period_id: periodData.id,
         academic_year_id: activeYear.id,
         amount: customAmount,
+        original_amount: customAmount,
         paid_amount: 0,
         remaining_amount: customAmount,
         due_date: dueDate,
+        deadline: dueDate,
         status: 'UNPAID',
         notes: `Penagihan massal ${billingPeriodName}`,
       }));
