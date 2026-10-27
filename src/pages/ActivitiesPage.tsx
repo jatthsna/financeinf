@@ -7,6 +7,7 @@ import { formatCurrency, formatDate } from '@/lib/utils';
 import { PageHeader } from '@/components/ui/page-header';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { RupiahInput } from '@/components/ui/rupiah-input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -333,13 +334,10 @@ export default function ActivitiesPage() {
 
             <div className="space-y-1">
               <Label className="text-xs font-semibold text-stone-700">Rencana Pagu Anggaran (IDR) *</Label>
-              <Input
-                type="number"
-                min="0"
-                step="50000"
+              <RupiahInput
                 value={formData.budget_plan}
-                onChange={(e) => setFormData({ ...formData, budget_plan: Number(e.target.value) })}
-                className="text-sm"
+                onChange={(val) => setFormData({ ...formData, budget_plan: val })}
+                placeholder="0"
               />
               <p className="text-[10px] text-stone-400">Pagu rencana tidak dicatat sebagai uang masuk/keluar kas.</p>
             </div>

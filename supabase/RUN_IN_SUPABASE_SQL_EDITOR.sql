@@ -1112,11 +1112,37 @@ CREATE POLICY settings_select ON app_settings
     FOR SELECT USING (true);
 
 -- Only admin can manage settings
+-- Staff (Admin & Treasurer) can manage settings
 CREATE POLICY settings_insert ON app_settings
-    FOR INSERT WITH CHECK (is_admin(auth.uid()));
+    FOR INSERT WITH CHECK (is_staff(auth.uid()));
 
 CREATE POLICY settings_update ON app_settings
-    FOR UPDATE USING (is_admin(auth.uid()));
+    FOR UPDATE USING (is_staff(auth.uid()));
+
+-- ============================================================================
+-- STORAGE BUCKETS & POLICIES SETUP
+-- ============================================================================
+INSERT INTO storage.buckets (id, name, public)
+VALUES 
+    ('branding', 'branding', true),
+    ('payment-evidence', 'payment-evidence', true),
+    ('avatars', 'avatars', true)
+ON CONFLICT (id) DO UPDATE SET public = true;
+
+DROP POLICY IF EXISTS "Public Select branding" ON storage.objects;
+CREATE POLICY "Public Select branding" ON storage.objects FOR SELECT USING (bucket_id = 'branding');
+
+DROP POLICY IF EXISTS "Staff Insert branding" ON storage.objects;
+CREATE POLICY "Staff Insert branding" ON storage.objects FOR INSERT TO authenticated WITH CHECK (bucket_id = 'branding');
+
+DROP POLICY IF EXISTS "Staff Update branding" ON storage.objects;
+CREATE POLICY "Staff Update branding" ON storage.objects FOR UPDATE TO authenticated USING (bucket_id = 'branding');
+
+DROP POLICY IF EXISTS "Public Select payment-evidence" ON storage.objects;
+CREATE POLICY "Public Select payment-evidence" ON storage.objects FOR SELECT USING (bucket_id = 'payment-evidence');
+
+DROP POLICY IF EXISTS "Student Insert payment-evidence" ON storage.objects;
+CREATE POLICY "Student Insert payment-evidence" ON storage.objects FOR INSERT TO authenticated WITH CHECK (bucket_id = 'payment-evidence');
 
 -- ============================================================================
 -- USER INVITATIONS POLICIES

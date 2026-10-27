@@ -7,6 +7,7 @@ import { formatCurrency, formatDate } from '@/lib/utils';
 import { PageHeader } from '@/components/ui/page-header';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { RupiahInput } from '@/components/ui/rupiah-input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -625,13 +626,10 @@ export default function PaymentsPage() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs font-semibold text-stone-700">Jumlah Uang Fisik Disetor (IDR) *</Label>
-                <Input
-                  type="number"
-                  min="1000"
-                  step="1000"
+                <RupiahInput
                   value={cashAmount}
-                  onChange={(e) => setCashAmount(Number(e.target.value))}
-                  className="text-sm"
+                  onChange={setCashAmount}
+                  placeholder="0"
                 />
               </div>
 
@@ -672,22 +670,21 @@ export default function PaymentsPage() {
                           </p>
                         </div>
                         <div className="flex items-center gap-2">
-                          <Input
-                            type="number"
-                            min="0"
-                            max={bill.remaining_amount}
-                            step="1000"
-                            placeholder="Nominal"
-                            value={billAllocations[bill.id] || ''}
-                            onChange={(e) => handleAllocationChange(bill.id, Number(e.target.value))}
-                            className="w-28 text-right text-xs h-8"
-                          />
+                          <div className="w-32">
+                            <RupiahInput
+                              value={billAllocations[bill.id] || 0}
+                              onChange={(val) => handleAllocationChange(bill.id, val)}
+                              max={bill.remaining_amount}
+                              placeholder="0"
+                              className="text-right text-xs h-8"
+                            />
+                          </div>
                           <Button
                             type="button"
                             variant="ghost"
                             size="sm"
                             onClick={() => handleAllocationChange(bill.id, bill.remaining_amount)}
-                            className="text-[10px] h-8 px-2 text-[#174C3C]"
+                            className="text-[10px] h-8 px-2 text-[#174C3C] shrink-0"
                           >
                             Lunaskan
                           </Button>

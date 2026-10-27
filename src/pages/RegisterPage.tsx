@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { Lock, Mail, User, GraduationCap, Phone, ShieldCheck, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Lock, Mail, User, GraduationCap, Phone, ShieldCheck, AlertCircle, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 import logoImg from '@/assets/logo.jpg';
 
 export default function RegisterPage() {
@@ -15,6 +15,7 @@ export default function RegisterPage() {
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSuccess, setIsSuccess] = useState(false);
@@ -184,13 +185,21 @@ export default function RegisterPage() {
                       <Lock className="absolute left-3 top-2.5 h-4 w-4 text-stone-400" />
                       <Input
                         id="password"
-                        type="password"
+                        type={showPassword ? 'text' : 'password'}
                         required
                         placeholder="••••••••"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
-                        className="pl-9 text-sm"
+                        className="pl-9 pr-8 text-sm"
                       />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-2.5 top-2.5 text-stone-400 hover:text-stone-600 focus:outline-none"
+                        title={showPassword ? 'Sembunyikan' : 'Tampilkan'}
+                      >
+                        {showPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                      </button>
                     </div>
                   </div>
 
@@ -200,13 +209,21 @@ export default function RegisterPage() {
                       <Lock className="absolute left-3 top-2.5 h-4 w-4 text-stone-400" />
                       <Input
                         id="confirmPassword"
-                        type="password"
+                        type={showPassword ? 'text' : 'password'}
                         required
                         placeholder="••••••••"
                         value={confirmPassword}
                         onChange={(e) => setConfirmPassword(e.target.value)}
-                        className="pl-9 text-sm"
+                        className="pl-9 pr-8 text-sm"
                       />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-2.5 top-2.5 text-stone-400 hover:text-stone-600 focus:outline-none"
+                        title={showPassword ? 'Sembunyikan' : 'Tampilkan'}
+                      >
+                        {showPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                      </button>
                     </div>
                   </div>
                 </div>

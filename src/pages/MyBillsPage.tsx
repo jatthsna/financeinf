@@ -7,6 +7,7 @@ import { formatCurrency, formatDate } from '@/lib/utils';
 import { PageHeader } from '@/components/ui/page-header';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { RupiahInput } from '@/components/ui/rupiah-input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -400,14 +401,11 @@ export default function MyBillsPage() {
               <div className="space-y-3 pt-2">
                 <div className="space-y-1">
                   <Label className="text-xs font-semibold text-stone-700">Nominal yang Dibayarkan (IDR) *</Label>
-                  <Input
-                    type="number"
-                    min="1000"
-                    step="1000"
+                  <RupiahInput
                     max={selectedBill.remaining_amount}
                     value={claimAmount}
-                    onChange={(e) => setClaimAmount(Number(e.target.value))}
-                    className="text-sm"
+                    onChange={setClaimAmount}
+                    placeholder="0"
                   />
                 </div>
 

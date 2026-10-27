@@ -6,6 +6,7 @@ import { formatCurrency, formatDate } from '@/lib/utils';
 import { PageHeader } from '@/components/ui/page-header';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { RupiahInput } from '@/components/ui/rupiah-input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -464,13 +465,10 @@ export default function BillingPage() {
 
               <div className="space-y-1.5">
                 <Label className="text-xs font-semibold text-stone-700">Nominal Penagihan per Mahasiswa (IDR) *</Label>
-                <Input
-                  type="number"
-                  min="1000"
-                  step="1000"
+                <RupiahInput
                   value={customAmount}
-                  onChange={(e) => setCustomAmount(Number(e.target.value))}
-                  className="text-sm"
+                  onChange={setCustomAmount}
+                  placeholder="0"
                 />
               </div>
 

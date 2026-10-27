@@ -7,6 +7,7 @@ import { formatCurrency, formatDate } from '@/lib/utils';
 import { PageHeader } from '@/components/ui/page-header';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { RupiahInput } from '@/components/ui/rupiah-input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -363,13 +364,10 @@ export default function IncomePage() {
 
               <div className="space-y-1">
                 <Label className="text-xs font-semibold text-stone-700">Nominal (IDR) *</Label>
-                <Input
-                  type="number"
-                  min="1000"
-                  step="1000"
+                <RupiahInput
                   value={formData.amount}
-                  onChange={(e) => setFormData({ ...formData, amount: Number(e.target.value) })}
-                  className="text-sm"
+                  onChange={(val) => setFormData({ ...formData, amount: val })}
+                  placeholder="0"
                 />
               </div>
             </div>
