@@ -58,7 +58,7 @@ export default function MyPaymentsPage() {
           verified_at,
           verifier:profiles!verified_by(full_name)
         `)
-        .eq('payer_id', user.id)
+        .or(`payer_id.eq.${user.id},student_id.eq.${user.id}`)
         .eq('academic_year_id', activeYear.id)
         .order('created_at', { ascending: false });
 

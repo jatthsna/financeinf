@@ -7,6 +7,7 @@ import { formatCurrency, formatDate } from '@/lib/utils';
 import { PageHeader } from '@/components/ui/page-header';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { RupiahInput } from '@/components/ui/rupiah-input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -320,13 +321,10 @@ export default function AccountsPage() {
 
               <div className="space-y-1">
                 <Label className="text-xs font-semibold text-stone-700">Saldo Awal (IDR)</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  step="10000"
+                <RupiahInput
                   value={formData.opening_balance}
-                  onChange={(e) => setFormData({ ...formData, opening_balance: Number(e.target.value) })}
-                  className="text-sm"
+                  onChange={(val) => setFormData({ ...formData, opening_balance: val })}
+                  placeholder="0"
                 />
               </div>
             </div>

@@ -162,28 +162,42 @@ export default function UsersPage() {
       if (!payload.full_name.trim()) throw new Error('Nama lengkap wajib diisi');
       if (!payload.email.trim()) throw new Error('Email pengguna wajib diisi');
 
-      // Create a mock UUID or insert profile record
-      const newUserId = crypto.randomUUID();
+      let newUserId: string | null = null;
 
-      const { data: profileData, error: profileErr } = await supabase
-        .from('profiles')
-        .insert([
-          {
-            id: newUserId,
-            full_name: payload.full_name.trim(),
-            nim: payload.nim.trim() || null,
-            email: payload.email.trim().toLowerCase(),
-            role: payload.role,
-            is_active: true,
+      // 1. Attempt admin creation RPC
+      const { data: rpcData, error: rpcErr } = await supabase.rpc('admin_create_user_account', {
+        p_email: payload.email.trim().toLowerCase(),
+        p_password: payload.nim.trim() || '123456',
+        p_full_name: payload.full_name.trim(),
+        p_nim: payload.nim.trim() || null,
+        p_role: payload.role,
+      });
+
+      if (!rpcErr && (rpcData as any)?.user_id) {
+        newUserId = (rpcData as any).user_id;
+      } else {
+        // Fallback: standard signUp
+        const defaultPassword = payload.nim.trim() || '123456';
+        const { data: authData, error: authErr } = await supabase.auth.signUp({
+          email: payload.email.trim().toLowerCase(),
+          password: defaultPassword,
+          options: {
+            data: {
+              full_name: payload.full_name.trim(),
+              nim: payload.nim.trim() || null,
+              role: payload.role,
+            },
           },
-        ])
-        .select()
-        .single();
+        });
 
-      if (profileErr) throw profileErr;
+        if (authErr) {
+          throw new Error(rpcErr?.message || authErr.message);
+        }
+        newUserId = authData.user?.id || null;
+      }
 
       // Auto-enroll in active year if selected
-      if (payload.autoEnrollActiveYear && activeYear?.id) {
+      if (newUserId && payload.autoEnrollActiveYear && activeYear?.id) {
         await supabase.from('student_memberships').insert([
           {
             student_id: newUserId,

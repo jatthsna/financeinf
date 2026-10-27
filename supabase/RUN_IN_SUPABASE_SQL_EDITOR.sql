@@ -950,7 +950,7 @@ CREATE POLICY obligations_update ON student_obligations
 -- ============================================================================
 -- Students can read their own payments
 CREATE POLICY payments_select_own ON payments
-    FOR SELECT USING (student_id = auth.uid());
+    FOR SELECT USING (student_id = auth.uid() OR payer_id = auth.uid());
 
 -- Staff can read all payments
 CREATE POLICY payments_select_staff ON payments
@@ -959,7 +959,7 @@ CREATE POLICY payments_select_staff ON payments
 -- Students can insert QRIS payments for themselves only
 CREATE POLICY payments_insert_student ON payments
     FOR INSERT WITH CHECK (
-        student_id = auth.uid() AND
+        (student_id = auth.uid() OR payer_id = auth.uid()) AND
         payment_method = 'QRIS' AND
         status = 'PENDING'
     );
@@ -979,7 +979,7 @@ CREATE POLICY payments_update_staff ON payments
 CREATE POLICY allocations_select_own ON payment_allocations
     FOR SELECT USING (
         EXISTS (
-            SELECT 1 FROM payments WHERE id = payment_allocations.payment_id AND student_id = auth.uid()
+            SELECT 1 FROM payments WHERE id = payment_allocations.payment_id AND (student_id = auth.uid() OR payer_id = auth.uid())
         )
     );
 
@@ -987,9 +987,14 @@ CREATE POLICY allocations_select_own ON payment_allocations
 CREATE POLICY allocations_select_staff ON payment_allocations
     FOR SELECT USING (is_staff(auth.uid()));
 
--- Only staff can manage allocations
+-- Staff or Student (for own pending payment) can insert allocations
 CREATE POLICY allocations_insert ON payment_allocations
-    FOR INSERT WITH CHECK (is_staff(auth.uid()));
+    FOR INSERT WITH CHECK (
+        is_staff(auth.uid()) OR
+        EXISTS (
+            SELECT 1 FROM payments WHERE id = payment_allocations.payment_id AND (student_id = auth.uid() OR payer_id = auth.uid())
+        )
+    );
 
 CREATE POLICY allocations_update ON payment_allocations
     FOR UPDATE USING (is_staff(auth.uid()));
@@ -1002,7 +1007,12 @@ CREATE POLICY allocations_delete ON payment_allocations
 -- ============================================================================
 -- Students can read their own evidence
 CREATE POLICY evidence_select_own ON payment_evidence
-    FOR SELECT USING (uploaded_by = auth.uid());
+    FOR SELECT USING (
+        uploaded_by = auth.uid() OR
+        EXISTS (
+            SELECT 1 FROM payments WHERE id = payment_evidence.payment_id AND (student_id = auth.uid() OR payer_id = auth.uid())
+        )
+    );
 
 -- Staff can read all evidence
 CREATE POLICY evidence_select_staff ON payment_evidence
@@ -1013,7 +1023,7 @@ CREATE POLICY evidence_insert_own ON payment_evidence
     FOR INSERT WITH CHECK (
         uploaded_by = auth.uid() AND
         EXISTS (
-            SELECT 1 FROM payments WHERE id = payment_evidence.payment_id AND student_id = auth.uid()
+            SELECT 1 FROM payments WHERE id = payment_evidence.payment_id AND (student_id = auth.uid() OR payer_id = auth.uid())
         )
     );
 
@@ -1143,6 +1153,15 @@ CREATE POLICY "Public Select payment-evidence" ON storage.objects FOR SELECT USI
 
 DROP POLICY IF EXISTS "Student Insert payment-evidence" ON storage.objects;
 CREATE POLICY "Student Insert payment-evidence" ON storage.objects FOR INSERT TO authenticated WITH CHECK (bucket_id = 'payment-evidence');
+
+DROP POLICY IF EXISTS "Public Select avatars" ON storage.objects;
+CREATE POLICY "Public Select avatars" ON storage.objects FOR SELECT USING (bucket_id = 'avatars');
+
+DROP POLICY IF EXISTS "Authenticated Insert avatars" ON storage.objects;
+CREATE POLICY "Authenticated Insert avatars" ON storage.objects FOR INSERT TO authenticated WITH CHECK (bucket_id = 'avatars');
+
+DROP POLICY IF EXISTS "Authenticated Update avatars" ON storage.objects;
+CREATE POLICY "Authenticated Update avatars" ON storage.objects FOR UPDATE TO authenticated USING (bucket_id = 'avatars');
 
 -- ============================================================================
 -- USER INVITATIONS POLICIES
@@ -1529,3 +1548,106 @@ END;
 $$;
 
 GRANT EXECUTE ON FUNCTION get_public_financial_overview(UUID) TO anon, authenticated;
+
+-- ============================================================================
+-- ADMIN USER CREATION FUNCTION
+-- Allows authorized staff/admin to register new student or staff with auth & profile
+-- ============================================================================
+CREATE OR REPLACE FUNCTION admin_create_user_account(
+    p_email TEXT,
+    p_password TEXT,
+    p_full_name TEXT,
+    p_nim TEXT DEFAULT NULL,
+    p_role TEXT DEFAULT 'MAHASISWA'
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth
+AS $$
+DECLARE
+    v_user_id UUID;
+    v_role user_role;
+    v_encrypted_pw TEXT;
+    v_clean_email TEXT;
+    v_clean_nim TEXT;
+BEGIN
+    -- Only staff (Admin / Bendahara) can register new users
+    IF NOT is_staff(auth.uid()) THEN
+        RAISE EXCEPTION 'Akses ditolak: Hanya pengurus berwenang yang dapat mendaftarkan akun baru.';
+    END IF;
+
+    v_clean_email := lower(trim(p_email));
+    v_clean_nim := NULLIF(trim(p_nim), '');
+
+    -- Check if email already registered in profiles
+    IF EXISTS (SELECT 1 FROM profiles WHERE email = v_clean_email) THEN
+        RAISE EXCEPTION 'Alamat email % sudah terdaftar di sistem.', v_clean_email;
+    END IF;
+
+    -- Check if NIM already registered
+    IF v_clean_nim IS NOT NULL AND EXISTS (SELECT 1 FROM profiles WHERE nim = v_clean_nim) THEN
+        RAISE EXCEPTION 'NIM % sudah terdaftar di sistem.', v_clean_nim;
+    END IF;
+
+    -- Parse role
+    BEGIN
+        v_role := p_role::user_role;
+    EXCEPTION WHEN OTHERS THEN
+        v_role := 'MAHASISWA'::user_role;
+    END;
+
+    v_user_id := uuid_generate_v4();
+    v_encrypted_pw := crypt(COALESCE(NULLIF(p_password, ''), v_clean_nim, '123456'), gen_salt('bf'));
+
+    -- 1. Insert into auth.users
+    INSERT INTO auth.users (
+        id,
+        instance_id,
+        email,
+        encrypted_password,
+        email_confirmed_at,
+        raw_app_meta_data,
+        raw_user_meta_data,
+        created_at,
+        updated_at,
+        role,
+        aud
+    ) VALUES (
+        v_user_id,
+        '00000000-0000-0000-0000-000000000000',
+        v_clean_email,
+        v_encrypted_pw,
+        now(),
+        jsonb_build_object('provider', 'email', 'providers', array['email']),
+        jsonb_build_object('full_name', p_full_name, 'nim', v_clean_nim, 'role', v_role::text),
+        now(),
+        now(),
+        'authenticated',
+        'authenticated'
+    );
+
+    -- 2. Insert into profiles
+    INSERT INTO profiles (
+        id,
+        full_name,
+        nim,
+        email,
+        role,
+        is_active,
+        email_linked
+    ) VALUES (
+        v_user_id,
+        p_full_name,
+        v_clean_nim,
+        v_clean_email,
+        v_role,
+        true,
+        false
+    );
+
+    RETURN jsonb_build_object('success', true, 'user_id', v_user_id);
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION admin_create_user_account TO authenticated;

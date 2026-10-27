@@ -74,12 +74,12 @@ const navSections: NavSection[] = [
     ],
   },
   {
-    title: 'Pengaturan',
-    roles: ['ADMIN'],
+    title: 'Sistem',
+    roles: ['ADMIN', 'BENDAHARA'],
     items: [
       { label: 'Tahun Akademik', icon: GraduationCap, href: '/tahun-akademik', roles: ['ADMIN'] },
       { label: 'Pengguna', icon: Users, href: '/pengguna', roles: ['ADMIN'] },
-      { label: 'Pengaturan', icon: Settings, href: '/pengaturan', roles: ['ADMIN'] },
+      { label: 'Pengaturan & QRIS', icon: Settings, href: '/pengaturan', roles: ['ADMIN', 'BENDAHARA'] },
       { label: 'Audit Log', icon: Shield, href: '/audit-log', roles: ['ADMIN'] },
     ],
   },

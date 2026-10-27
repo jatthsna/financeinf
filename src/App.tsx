@@ -147,7 +147,7 @@ export default function App() {
         <Route
           path="pengaturan"
           element={
-            <ProtectedRoute roles={['ADMIN']}>
+            <ProtectedRoute roles={['ADMIN', 'BENDAHARA']}>
               <SettingsPage />
             </ProtectedRoute>
           }

@@ -357,7 +357,7 @@ export default function PaymentsPage() {
             const newRemaining = Math.max(0, Number(alloc.obligation.amount) - newPaid);
             const newStatus = newRemaining === 0 ? 'PAID' : 'PARTIALLY_PAID';
 
-            await supabase
+            const { error: obErr } = await supabase
               .from('student_obligations')
               .update({
                 paid_amount: newPaid,
@@ -365,6 +365,7 @@ export default function PaymentsPage() {
                 status: newStatus,
               })
               .eq('id', alloc.obligation.id);
+            if (obErr) throw obErr;
           }
         }
       }

@@ -94,10 +94,11 @@ export default function AcademicYearPage() {
   const activateMutation = useMutation({
     mutationFn: async (yearId: string) => {
       // 1. Deactivate existing active years
-      await supabase
+      const { error: deactErr } = await supabase
         .from('academic_years')
         .update({ status: 'INACTIVE' })
         .eq('status', 'ACTIVE');
+      if (deactErr) throw deactErr;
 
       // 2. Set chosen year as ACTIVE
       const { error } = await supabase

@@ -175,7 +175,7 @@ export default function MyBillsPage() {
       if (paymentErr) throw paymentErr;
 
       // 3. Connect payment allocation to selected obligation
-      await supabase.from('payment_allocations').insert([
+      const { error: allocErr } = await supabase.from('payment_allocations').insert([
         {
           payment_id: paymentRecord.id,
           student_obligation_id: selectedBill.id,
@@ -183,9 +183,10 @@ export default function MyBillsPage() {
           amount: claimAmount,
         },
       ]);
+      if (allocErr) throw allocErr;
 
       // 4. Record evidence record
-      await supabase.from('payment_evidence').insert([
+      const { error: evidErr } = await supabase.from('payment_evidence').insert([
         {
           payment_id: paymentRecord.id,
           file_path: filePath,
@@ -196,6 +197,7 @@ export default function MyBillsPage() {
           uploaded_by: user.id,
         },
       ]);
+      if (evidErr) throw evidErr;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['my_bills'] });

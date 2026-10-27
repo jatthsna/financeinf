@@ -101,7 +101,7 @@ function AdminDashboard() {
 
       const { data } = await supabase
         .from('payments')
-        .select('id, amount, payment_method, status, receipt_number, created_at, profiles:payer_id(full_name)')
+        .select('id, amount, payment_method, status, receipt_number, created_at, payer:profiles!payer_id(full_name, nim)')
         .eq('academic_year_id', yearId)
         .order('created_at', { ascending: false })
         .limit(10);
@@ -301,7 +301,7 @@ function TreasurerDashboard() {
 
       const { data } = await supabase
         .from('payments')
-        .select('id, amount, payment_date, receipt_number, created_at, profiles:payer_id(full_name, nim)')
+        .select('id, amount, payment_date, receipt_number, created_at, payer:profiles!payer_id(full_name, nim)')
         .eq('academic_year_id', yearId)
         .eq('payment_method', 'QRIS')
         .eq('status', 'PENDING')
@@ -373,7 +373,7 @@ function TreasurerDashboard() {
                 >
                   <div>
                     <p className="text-sm font-semibold text-[#191B19]">
-                      {p.profiles?.full_name ?? 'Mahasiswa'} {p.profiles?.nim ? `(${p.profiles.nim})` : ''}
+                      {p.payer?.full_name ?? p.profiles?.full_name ?? 'Mahasiswa'} {p.payer?.nim ?? p.profiles?.nim ? `(${p.payer?.nim ?? p.profiles?.nim})` : ''}
                     </p>
                     <p className="text-xs text-stone-500">
                       Diajukan: {formatDate(p.created_at, 'with-time')} · Ref: {p.receipt_number || '-'}
@@ -428,7 +428,7 @@ function StudentDashboard() {
         supabase
           .from('payments')
           .select('amount')
-          .eq('payer_id', userId)
+          .or(`payer_id.eq.${userId},student_id.eq.${userId}`)
           .eq('academic_year_id', yearId)
           .eq('status', 'APPROVED'),
       ]);
@@ -482,7 +482,7 @@ function StudentDashboard() {
       const { data } = await supabase
         .from('payments')
         .select('id, amount, payment_method, status, receipt_number, created_at')
-        .eq('payer_id', userId)
+        .or(`payer_id.eq.${userId},student_id.eq.${userId}`)
         .eq('academic_year_id', yearId)
         .order('created_at', { ascending: false })
         .limit(5);
