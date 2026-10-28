@@ -35,7 +35,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { PlusCircle, Search, FileText, CheckCircle2, AlertTriangle, Users } from 'lucide-react';
+import { PlusCircle, Search, FileText, CheckCircle2, AlertTriangle, Users, Trash2 } from 'lucide-react';
 
 interface ObligationItem {
   id: string;
@@ -156,22 +156,29 @@ export default function BillingPage() {
     enabled: !!activeYear?.id,
   });
 
-  // Fetch Active Memberships for generation
-  const { data: members } = useQuery({
-    queryKey: ['student_memberships_active', activeYear?.id],
+  // Fetch Active Students for generation (directly from profiles to ensure all registered students appear)
+  const { data: members, isLoading: membersLoading } = useQuery({
+    queryKey: ['students_for_billing_generation', activeYear?.id],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('student_memberships')
-        .select(`
-          student_id,
-          profiles:student_id(id, full_name, nim, email)
-        `)
-        .eq('academic_year_id', activeYear?.id || '')
-        .eq('is_active', true);
+        .from('profiles')
+        .select('id, full_name, nim, email, role')
+        .eq('role', 'MAHASISWA')
+        .order('full_name', { ascending: true });
+
       if (error) throw error;
-      return (data || []) as unknown as StudentMember[];
+
+      return (data || []).map((p) => ({
+        student_id: p.id,
+        profiles: {
+          id: p.id,
+          full_name: p.full_name,
+          nim: p.nim,
+          email: p.email,
+        },
+      })) as StudentMember[];
     },
-    enabled: !!activeYear?.id && isGenerateOpen,
+    enabled: isGenerateOpen,
   });
 
   // Selected contribution details
@@ -271,6 +278,25 @@ export default function BillingPage() {
     },
     onError: (err: any) => {
       setGenerateError(err.message || 'Gagal menerbitkan kewajiban tagihan.');
+    },
+  });
+
+  const [obligationToDelete, setObligationToDelete] = useState<ObligationItem | null>(null);
+
+  const deleteObligationMutation = useMutation({
+    mutationFn: async (id: string) => {
+      // 1. Delete associated payment allocations if any
+      await supabase.from('payment_allocations').delete().eq('obligation_id', id);
+      // 2. Delete obligation record
+      const { error } = await supabase.from('student_obligations').delete().eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['student_obligations'] });
+      setObligationToDelete(null);
+    },
+    onError: (err: any) => {
+      alert(`Gagal menghapus tagihan: ${err.message}`);
     },
   });
 
@@ -392,6 +418,7 @@ export default function BillingPage() {
                 <TableHead className="font-semibold text-[#191B19] text-right">Terbayar</TableHead>
                 <TableHead className="font-semibold text-[#191B19] text-right">Sisa Kewajiban</TableHead>
                 <TableHead className="font-semibold text-[#191B19] text-center">Status</TableHead>
+                <TableHead className="font-semibold text-[#191B19] text-center w-16">Aksi</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -430,12 +457,58 @@ export default function BillingPage() {
                   <TableCell className="text-center">
                     {getStatusBadge(item.status)}
                   </TableCell>
+                  <TableCell className="text-center">
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => setObligationToDelete(item)}
+                      className="h-8 w-8 text-stone-400 hover:text-red-600 hover:bg-red-50"
+                      title="Hapus tagihan"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
         </Card>
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={!!obligationToDelete} onOpenChange={(open) => !open && setObligationToDelete(null)}>
+        <DialogContent className="max-w-sm bg-white">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-red-600 flex items-center gap-2">
+              <Trash2 className="h-5 w-5" /> Hapus Tagihan Kewajiban
+            </DialogTitle>
+            <DialogDescription className="text-xs text-stone-600 pt-2">
+              Apakah Anda yakin ingin membatalkan/menghapus tagihan iuran untuk{' '}
+              <strong>{obligationToDelete?.student?.full_name}</strong> sebesar{' '}
+              <strong>{formatCurrency(obligationToDelete?.remaining_amount || 0)}</strong>?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="pt-3 gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setObligationToDelete(null)}
+              className="text-xs"
+            >
+              Batal
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={deleteObligationMutation.isPending}
+              onClick={() => obligationToDelete && deleteObligationMutation.mutate(obligationToDelete.id)}
+              className="text-xs bg-red-600 hover:bg-red-700 text-white"
+            >
+              {deleteObligationMutation.isPending ? 'Menghapus...' : 'Ya, Hapus Tagihan'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Generate Obligations Dialog */}
       <Dialog open={isGenerateOpen} onOpenChange={setIsGenerateOpen}>

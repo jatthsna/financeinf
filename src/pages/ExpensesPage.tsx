@@ -36,7 +36,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Plus, Search, TrendingDown, AlertCircle, FileText, CheckCircle2 } from 'lucide-react';
+import { Plus, Search, TrendingDown, AlertCircle, FileText, CheckCircle2, Trash2 } from 'lucide-react';
 
 interface ExpenseItem {
   id: string;
@@ -186,6 +186,24 @@ export default function ExpensesPage() {
     },
   });
 
+  const [expenseToDelete, setExpenseToDelete] = useState<ExpenseItem | null>(null);
+
+  const deleteExpenseMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('expenses').delete().eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['expenses_list'] });
+      queryClient.invalidateQueries({ queryKey: ['available_cash_balance'] });
+      queryClient.invalidateQueries({ queryKey: ['cash-book-ledger'] });
+      setExpenseToDelete(null);
+    },
+    onError: (err: any) => {
+      alert(`Gagal menghapus pengeluaran: ${err.message}`);
+    },
+  });
+
   const filteredExpenses = (expenses || []).filter((item) => {
     const v = item.vendor || '';
     const d = item.description || '';
@@ -315,6 +333,7 @@ export default function ExpensesPage() {
                 <TableHead className="font-semibold text-[#191B19]">Deskripsi</TableHead>
                 <TableHead className="font-semibold text-[#191B19] text-right">Nominal</TableHead>
                 <TableHead className="font-semibold text-[#191B19] text-center">Status</TableHead>
+                <TableHead className="font-semibold text-[#191B19] text-center w-16">Aksi</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -345,12 +364,57 @@ export default function ExpensesPage() {
                       {item.status}
                     </Badge>
                   </TableCell>
+                  <TableCell className="text-center">
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => setExpenseToDelete(item)}
+                      className="h-8 w-8 text-stone-400 hover:text-red-600 hover:bg-red-50"
+                      title="Hapus Pengeluaran"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
         </Card>
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={!!expenseToDelete} onOpenChange={(open) => !open && setExpenseToDelete(null)}>
+        <DialogContent className="max-w-sm bg-white">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-red-600 flex items-center gap-2">
+              <Trash2 className="h-5 w-5" /> Hapus Catatan Pengeluaran
+            </DialogTitle>
+            <DialogDescription className="text-xs text-stone-600 pt-2">
+              Apakah Anda yakin ingin menghapus catatan pengeluaran #{expenseToDelete?.reference_number} ({expenseToDelete?.vendor || 'Pihak Ketiga'}) sebesar{' '}
+              <strong>-{formatCurrency(expenseToDelete?.amount || 0)}</strong>?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="pt-3 gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setExpenseToDelete(null)}
+              className="text-xs"
+            >
+              Batal
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={deleteExpenseMutation.isPending}
+              onClick={() => expenseToDelete && deleteExpenseMutation.mutate(expenseToDelete.id)}
+              className="text-xs bg-red-600 hover:bg-red-700 text-white"
+            >
+              {deleteExpenseMutation.isPending ? 'Menghapus...' : 'Ya, Hapus'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Record Expense Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>

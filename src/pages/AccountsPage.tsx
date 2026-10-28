@@ -28,7 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Building, Plus, Wallet, ArrowRightLeft, CheckCircle2, ShieldCheck } from 'lucide-react';
+import { Building, Plus, Wallet, ArrowRightLeft, CheckCircle2, ShieldCheck, Trash2 } from 'lucide-react';
 
 interface CashAccount {
   id: string;
@@ -149,6 +149,22 @@ export default function AccountsPage() {
     },
   });
 
+  const [accountToDelete, setAccountToDelete] = useState<CashAccount | null>(null);
+
+  const deleteAccountMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('cash_accounts').delete().eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['cash_accounts'] });
+      setAccountToDelete(null);
+    },
+    onError: (err: any) => {
+      alert(`Gagal menghapus rekening: ${err.message}`);
+    },
+  });
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -248,9 +264,22 @@ export default function AccountsPage() {
                         ? 'Rekening Bank'
                         : 'Merchant QRIS'}
                     </span>
-                    <Badge variant="outline" className="text-[10px] bg-emerald-50 text-emerald-800 border-emerald-200">
-                      Aktif
-                    </Badge>
+                    <div className="flex items-center gap-1.5">
+                      <Badge variant="outline" className="text-[10px] bg-emerald-50 text-emerald-800 border-emerald-200">
+                        Aktif
+                      </Badge>
+                      {isStaff && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setAccountToDelete(acc)}
+                          className="h-6 w-6 text-stone-400 hover:text-red-600 hover:bg-red-50"
+                          title="Hapus Rekening"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                    </div>
                   </div>
                   <CardTitle className="text-base font-bold text-[#191B19] mt-1">
                     {acc.account_name}
@@ -351,6 +380,39 @@ export default function AccountsPage() {
               </Button>
             </DialogFooter>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={!!accountToDelete} onOpenChange={(open) => !open && setAccountToDelete(null)}>
+        <DialogContent className="max-w-sm bg-white">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-red-600 flex items-center gap-2">
+              <Trash2 className="h-5 w-5" /> Hapus Rekening Kas
+            </DialogTitle>
+            <DialogDescription className="text-xs text-stone-600 pt-2">
+              Apakah Anda yakin ingin menghapus rekening <strong>{accountToDelete?.account_name}</strong>? Tindakan ini tidak dapat dibatalkan.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="pt-3 gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setAccountToDelete(null)}
+              className="text-xs"
+            >
+              Batal
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={deleteAccountMutation.isPending}
+              onClick={() => accountToDelete && deleteAccountMutation.mutate(accountToDelete.id)}
+              className="text-xs bg-red-600 hover:bg-red-700 text-white"
+            >
+              {deleteAccountMutation.isPending ? 'Menghapus...' : 'Ya, Hapus Rekening'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

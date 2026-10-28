@@ -28,7 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Plus, Search, Layers, Edit2, CheckCircle2, XCircle } from 'lucide-react';
+import { Plus, Search, Layers, Edit2, CheckCircle2, XCircle, Trash2 } from 'lucide-react';
 
 interface ContributionTypeItem {
   id: string;
@@ -172,6 +172,35 @@ export default function ContributionTypesPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['contribution_types'] });
+    },
+  });
+
+  const [typeToDelete, setTypeToDelete] = useState<ContributionTypeItem | null>(null);
+
+  const deleteTypeMutation = useMutation({
+    mutationFn: async (id: string) => {
+      // Check if there are periods/obligations referencing this
+      const { data: periods } = await supabase
+        .from('contribution_periods')
+        .select('id')
+        .eq('contribution_type_id', id);
+
+      if (periods && periods.length > 0) {
+        for (const p of periods) {
+          await supabase.from('student_obligations').delete().eq('contribution_period_id', p.id);
+        }
+        await supabase.from('contribution_periods').delete().eq('contribution_type_id', id);
+      }
+
+      const { error } = await supabase.from('contribution_types').delete().eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['contribution_types'] });
+      setTypeToDelete(null);
+    },
+    onError: (err: any) => {
+      alert(`Gagal menghapus jenis iuran: ${err.message}`);
     },
   });
 
@@ -404,6 +433,15 @@ export default function ContributionTypesPage() {
                     >
                       <Edit2 className="mr-1 h-3.5 w-3.5" /> Edit
                     </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setTypeToDelete(item)}
+                      className="h-8 w-8 text-stone-400 hover:text-red-600 hover:bg-red-50"
+                      title="Hapus Jenis Iuran"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                   </div>
                 )}
               </CardContent>
@@ -411,6 +449,39 @@ export default function ContributionTypesPage() {
           ))}
         </div>
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={!!typeToDelete} onOpenChange={(open) => !open && setTypeToDelete(null)}>
+        <DialogContent className="max-w-sm bg-white">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-red-600 flex items-center gap-2">
+              <Trash2 className="h-5 w-5" /> Hapus Jenis Iuran
+            </DialogTitle>
+            <DialogDescription className="text-xs text-stone-600 pt-2">
+              Apakah Anda yakin ingin menghapus jenis iuran <strong>{typeToDelete?.name}</strong>? Tagihan yang terkait dengan jenis iuran ini juga akan dibersihkan.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="pt-3 gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setTypeToDelete(null)}
+              className="text-xs"
+            >
+              Batal
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={deleteTypeMutation.isPending}
+              onClick={() => typeToDelete && deleteTypeMutation.mutate(typeToDelete.id)}
+              className="text-xs bg-red-600 hover:bg-red-700 text-white"
+            >
+              {deleteTypeMutation.isPending ? 'Menghapus...' : 'Ya, Hapus'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Create / Edit Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>

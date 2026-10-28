@@ -49,6 +49,8 @@ import {
   Printer,
   Maximize2,
   ExternalLink,
+  Trash2,
+  Sparkles,
 } from 'lucide-react';
 import { OfficialReceiptModal, type OfficialReceiptData } from '@/components/OfficialReceiptModal';
 import { EvidenceViewerModal } from '@/components/EvidenceViewerModal';
@@ -225,6 +227,24 @@ export default function PaymentsPage() {
     enabled: !!activeYear?.id,
   });
 
+  // Fetch ALL students from profiles to ensure student list is NEVER empty
+  const { data: allStudents } = useQuery({
+    queryKey: ['all_registered_students_cash'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, full_name, nim, email')
+        .eq('role', 'MAHASISWA')
+        .order('full_name', { ascending: true });
+      if (error) {
+        console.error('Error fetching all students:', error);
+        return [];
+      }
+      return data || [];
+    },
+    enabled: isCashModalOpen,
+  });
+
   // Fetch students with unpaid obligations for the Cash Modal
   const { data: studentsWithBills } = useQuery({
     queryKey: ['students_with_unpaid_bills', activeYear?.id],
@@ -256,14 +276,15 @@ export default function PaymentsPage() {
     enabled: !!activeYear?.id && isCashModalOpen,
   });
 
-  // Unique students who have pending bills
-  const studentOptions = Array.from(
-    new Map(
-      (studentsWithBills || [])
-        .filter((o) => o.student)
-        .map((o) => [o.student!.id, o.student!])
-    ).values()
-  );
+  // Merged student options: all student profiles + any profile from obligations
+  const studentOptions = (() => {
+    const map = new Map<string, { id: string; full_name: string; nim: string | null }>();
+    (allStudents || []).forEach((s) => map.set(s.id, { id: s.id, full_name: s.full_name, nim: s.nim }));
+    (studentsWithBills || []).forEach((o) => {
+      if (o.student) map.set(o.student.id, o.student);
+    });
+    return Array.from(map.values()).sort((a, b) => a.full_name.localeCompare(b.full_name));
+  })();
 
   // Filter bills belonging to selected student
   const studentBills = (studentsWithBills || []).filter(
@@ -294,15 +315,30 @@ export default function PaymentsPage() {
 
   const totalAllocated = Object.values(billAllocations).reduce((sum, v) => sum + (v || 0), 0);
 
+  const handleAutoAllocate = () => {
+    let remaining = cashAmount;
+    const newAlloc: Record<string, number> = {};
+    for (const b of studentBills) {
+      if (remaining <= 0) break;
+      const billRem = Number(b.remaining_amount);
+      const alloc = Math.min(billRem, remaining);
+      newAlloc[b.id] = alloc;
+      remaining -= alloc;
+    }
+    setBillAllocations(newAlloc);
+  };
+
   // Record Cash Payment Mutation
   const recordCashMutation = useMutation({
     mutationFn: async () => {
       if (!activeYear?.id) throw new Error('Tahun akademik belum dipilih');
       if (!selectedStudentId) throw new Error('Pilih mahasiswa pembayar');
       if (cashAmount <= 0) throw new Error('Nominal pembayaran harus lebih besar dari 0');
-      if (totalAllocated !== cashAmount) {
+
+      // If student has pending bills and user made allocations, check matching total
+      if (studentBills.length > 0 && totalAllocated > 0 && totalAllocated !== cashAmount) {
         throw new Error(
-          `Total alokasi tagihan (${formatCurrency(totalAllocated)}) harus tepat sama dengan jumlah uang disetor (${formatCurrency(cashAmount)})`
+          `Total alokasi tagihan (${formatCurrency(totalAllocated)}) harus tepat sama dengan uang disetor (${formatCurrency(cashAmount)}). Klik "Alokasi Otomatis" atau sesuaikan nominal alokasi.`
         );
       }
 
@@ -322,7 +358,7 @@ export default function PaymentsPage() {
             status: 'APPROVED',
             reviewed_by: user?.id,
             reviewed_at: new Date().toISOString(),
-            notes: cashNotes || 'Penerimaan kas tunai di tempat',
+            notes: cashNotes || (totalAllocated > 0 ? 'Penerimaan kas tunai di tempat' : 'Penerimaan kas tunai langsung (tanpa tagihan tertunda)'),
           },
         ])
         .select()
@@ -330,7 +366,7 @@ export default function PaymentsPage() {
 
       if (paymentError) throw paymentError;
 
-      // 2. Insert Allocations & update obligations
+      // 2. Insert Allocations & update obligations if allocated
       for (const [obligationId, allocAmount] of Object.entries(billAllocations)) {
         if (allocAmount > 0) {
           const { error: allocErr } = await supabase
@@ -377,12 +413,35 @@ export default function PaymentsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['payments_list'] });
       queryClient.invalidateQueries({ queryKey: ['students_with_unpaid_bills'] });
-      queryClient.invalidateQueries({ queryKey: ['cash-book-entries'] });
+      queryClient.invalidateQueries({ queryKey: ['cash-book-ledger'] });
       queryClient.invalidateQueries({ queryKey: ['admin-overview'] });
       setIsCashModalOpen(false);
     },
     onError: (err: any) => {
       setRecordError(err.message || 'Gagal mencatat pembayaran kas.');
+    },
+  });
+
+  const [paymentToDelete, setPaymentToDelete] = useState<PaymentItem | null>(null);
+
+  const deletePaymentMutation = useMutation({
+    mutationFn: async (id: string) => {
+      // 1. Delete allocations
+      await supabase.from('payment_allocations').delete().eq('payment_id', id);
+      // 2. Delete evidence
+      await supabase.from('payment_evidence').delete().eq('payment_id', id);
+      // 3. Delete payment
+      const { error } = await supabase.from('payments').delete().eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['payments_list'] });
+      queryClient.invalidateQueries({ queryKey: ['cash-book-ledger'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-overview'] });
+      setPaymentToDelete(null);
+    },
+    onError: (err: any) => {
+      alert(`Gagal menghapus catatan pembayaran: ${err.message}`);
     },
   });
 
@@ -735,6 +794,15 @@ export default function PaymentsPage() {
                             <Printer className="mr-1 h-3.5 w-3.5 text-stone-500" /> Kwitansi
                           </Button>
                         )}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setPaymentToDelete(p)}
+                          className="h-8 w-8 text-stone-400 hover:text-red-600 hover:bg-red-50"
+                          title="Hapus Pembayaran"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -744,6 +812,41 @@ export default function PaymentsPage() {
           </div>
         </Card>
       )}
+
+      {/* Delete Payment Confirmation Dialog */}
+      <Dialog open={!!paymentToDelete} onOpenChange={(open) => !open && setPaymentToDelete(null)}>
+        <DialogContent className="max-w-sm bg-white">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-red-600 flex items-center gap-2">
+              <Trash2 className="h-5 w-5" /> Hapus Catatan Pembayaran
+            </DialogTitle>
+            <DialogDescription className="text-xs text-stone-600 pt-2">
+              Apakah Anda yakin ingin membatalkan/menghapus pembayaran #{paymentToDelete?.reference_number} oleh{' '}
+              <strong>{paymentToDelete?.student?.full_name}</strong> sebesar{' '}
+              <strong>{formatCurrency(paymentToDelete?.amount || 0)}</strong>?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="pt-3 gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPaymentToDelete(null)}
+              className="text-xs"
+            >
+              Batal
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={deletePaymentMutation.isPending}
+              onClick={() => paymentToDelete && deletePaymentMutation.mutate(paymentToDelete.id)}
+              className="text-xs bg-red-600 hover:bg-red-700 text-white"
+            >
+              {deletePaymentMutation.isPending ? 'Menghapus...' : 'Ya, Hapus'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Cash Recording Modal */}
       <Dialog open={isCashModalOpen} onOpenChange={setIsCashModalOpen}>
@@ -768,7 +871,7 @@ export default function PaymentsPage() {
               <Label className="text-xs font-semibold text-stone-700">Pilih Mahasiswa Pembayar *</Label>
               <Select value={selectedStudentId} onValueChange={handleStudentSelect}>
                 <SelectTrigger className="text-xs">
-                  <SelectValue placeholder="Pilih mahasiswa yang memiliki tagihan..." />
+                  <SelectValue placeholder="Pilih mahasiswa pembayar..." />
                 </SelectTrigger>
                 <SelectContent>
                   {studentOptions.map((s: any) => (
@@ -808,18 +911,31 @@ export default function PaymentsPage() {
                   <Label className="text-xs font-bold text-stone-800">
                     Alokasikan Dana ke Tagihan Mahasiswa:
                   </Label>
-                  <span
-                    className={`text-xs font-mono font-bold ${
-                      totalAllocated === cashAmount ? 'text-emerald-700' : 'text-amber-700'
-                    }`}
-                  >
-                    Alokasi: {formatCurrency(totalAllocated)} / {formatCurrency(cashAmount)}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    {studentBills.length > 0 && cashAmount > 0 && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={handleAutoAllocate}
+                        className="h-6 text-[10px] px-2 text-[#174C3C] border-[#174C3C]/30 hover:bg-[#174C3C]/10 flex items-center gap-1"
+                      >
+                        <Sparkles className="h-3 w-3" /> Alokasi Otomatis
+                      </Button>
+                    )}
+                    <span
+                      className={`text-xs font-mono font-bold ${
+                        totalAllocated === cashAmount ? 'text-emerald-700' : 'text-amber-700'
+                      }`}
+                    >
+                      Alokasi: {formatCurrency(totalAllocated)} / {formatCurrency(cashAmount)}
+                    </span>
+                  </div>
                 </div>
 
                 {studentBills.length === 0 ? (
-                  <p className="text-xs text-stone-500 py-2">
-                    Mahasiswa ini tidak memiliki tunggakan tagihan aktif.
+                  <p className="text-xs text-emerald-800 bg-emerald-50/80 p-2.5 rounded border border-emerald-200">
+                    Mahasiswa ini tidak memiliki tunggakan tagihan aktif. Pembayaran kas fisik tetap dapat dicatat langsung sebagai pemasukan kas sah mahasiswa.
                   </p>
                 ) : (
                   <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
@@ -869,7 +985,12 @@ export default function PaymentsPage() {
               </Button>
               <Button
                 onClick={() => recordCashMutation.mutate()}
-                disabled={recordCashMutation.isPending || cashAmount <= 0 || totalAllocated !== cashAmount}
+                disabled={
+                  recordCashMutation.isPending ||
+                  cashAmount <= 0 ||
+                  !selectedStudentId ||
+                  (studentBills.length > 0 && totalAllocated > 0 && totalAllocated !== cashAmount)
+                }
                 className="bg-[#174C3C] text-white hover:bg-[#12382c] text-xs font-medium"
               >
                 {recordCashMutation.isPending ? 'Menyimpan Kas...' : 'Simpan Penerimaan Kas'}

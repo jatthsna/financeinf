@@ -36,7 +36,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Plus, Search, TrendingUp, CheckCircle2, FileText } from 'lucide-react';
+import { Plus, Search, TrendingUp, CheckCircle2, FileText, Trash2 } from 'lucide-react';
 
 interface IncomeItem {
   id: string;
@@ -147,6 +147,23 @@ export default function IncomePage() {
     },
   });
 
+  const [incomeToDelete, setIncomeToDelete] = useState<IncomeItem | null>(null);
+
+  const deleteIncomeMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('income_records').delete().eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['income_records'] });
+      queryClient.invalidateQueries({ queryKey: ['cash-book-ledger'] });
+      setIncomeToDelete(null);
+    },
+    onError: (err: any) => {
+      alert(`Gagal menghapus pendapatan: ${err.message}`);
+    },
+  });
+
   const filteredIncome = (incomeList || []).filter((item) => {
     const src = item.source || '';
     const desc = item.description || '';
@@ -254,6 +271,7 @@ export default function IncomePage() {
                 <TableHead className="font-semibold text-[#191B19]">Deskripsi</TableHead>
                 <TableHead className="font-semibold text-[#191B19] text-right">Nominal</TableHead>
                 <TableHead className="font-semibold text-[#191B19] text-center">Status</TableHead>
+                <TableHead className="font-semibold text-[#191B19] text-center w-16">Aksi</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -282,12 +300,57 @@ export default function IncomePage() {
                       {item.status}
                     </Badge>
                   </TableCell>
+                  <TableCell className="text-center">
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => setIncomeToDelete(item)}
+                      className="h-8 w-8 text-stone-400 hover:text-red-600 hover:bg-red-50"
+                      title="Hapus Pendapatan"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
         </Card>
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={!!incomeToDelete} onOpenChange={(open) => !open && setIncomeToDelete(null)}>
+        <DialogContent className="max-w-sm bg-white">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-red-600 flex items-center gap-2">
+              <Trash2 className="h-5 w-5" /> Hapus Catatan Pendapatan
+            </DialogTitle>
+            <DialogDescription className="text-xs text-stone-600 pt-2">
+              Apakah Anda yakin ingin menghapus catatan pendapatan #{incomeToDelete?.reference_number} ({incomeToDelete?.source}) sebesar{' '}
+              <strong>+{formatCurrency(incomeToDelete?.amount || 0)}</strong>?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="pt-3 gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIncomeToDelete(null)}
+              className="text-xs"
+            >
+              Batal
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={deleteIncomeMutation.isPending}
+              onClick={() => incomeToDelete && deleteIncomeMutation.mutate(incomeToDelete.id)}
+              className="text-xs bg-red-600 hover:bg-red-700 text-white"
+            >
+              {deleteIncomeMutation.isPending ? 'Menghapus...' : 'Ya, Hapus'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Record Income Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
