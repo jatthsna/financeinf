@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
 import {
@@ -13,7 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Camera, User, Mail, GraduationCap, Phone, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import { Camera, User, Mail, GraduationCap, Phone, CheckCircle2, AlertCircle, Loader2, LogOut } from 'lucide-react';
 
 interface UserProfileModalProps {
   isOpen: boolean;
@@ -21,7 +22,8 @@ interface UserProfileModalProps {
 }
 
 export function UserProfileModal({ isOpen, onClose }: UserProfileModalProps) {
-  const { user, profile, updateProfile } = useAuth();
+  const navigate = useNavigate();
+  const { user, profile, updateProfile, signOut } = useAuth();
 
   const [phone, setPhone] = useState(profile?.phone || '');
   const [fullName, setFullName] = useState(profile?.full_name || '');
@@ -231,23 +233,37 @@ export function UserProfileModal({ isOpen, onClose }: UserProfileModalProps) {
             </div>
           </div>
 
-          <DialogFooter className="pt-3 border-t border-stone-100">
-            <Button type="button" variant="outline" onClick={onClose} className="text-xs">
-              Tutup
-            </Button>
+          <DialogFooter className="pt-3 border-t border-stone-100 flex flex-col-reverse sm:flex-row justify-between items-center gap-2">
             <Button
-              type="submit"
-              disabled={saving}
-              className="bg-[#174C3C] text-white hover:bg-[#12382c] text-xs font-semibold"
+              type="button"
+              variant="ghost"
+              onClick={async () => {
+                onClose();
+                await signOut();
+                navigate('/login');
+              }}
+              className="text-xs text-red-600 hover:text-red-700 hover:bg-red-50 font-semibold w-full sm:w-auto mr-auto flex items-center justify-center gap-1.5"
             >
-              {saving ? (
-                <>
-                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> Menyimpan...
-                </>
-              ) : (
-                'Simpan Perubahan'
-              )}
+              <LogOut className="h-3.5 w-3.5 text-red-600" /> Keluar Sesi Akun
             </Button>
+            <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+              <Button type="button" variant="outline" onClick={onClose} className="text-xs">
+                Tutup
+              </Button>
+              <Button
+                type="submit"
+                disabled={saving}
+                className="bg-[#174C3C] text-white hover:bg-[#12382c] text-xs font-semibold"
+              >
+                {saving ? (
+                  <>
+                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> Menyimpan...
+                  </>
+                ) : (
+                  'Simpan Perubahan'
+                )}
+              </Button>
+            </div>
           </DialogFooter>
         </form>
       </DialogContent>
