@@ -99,16 +99,18 @@ export default function BillingPage() {
           id,
           student_id,
           academic_year_id,
-          contribution_type_id,
-          amount,
           paid_amount,
           remaining_amount,
-          due_date,
+          deadline,
           status,
-          notes,
           created_at,
           student:profiles!student_id(full_name, nim, email),
-          contribution_type:contribution_types!contribution_type_id(name, category)
+          period:contribution_periods!contribution_period_id(
+            id,
+            amount,
+            period_label,
+            contribution_type:contribution_types!contribution_type_id(id, name, category)
+          )
         `)
         .order('created_at', { ascending: false });
 
@@ -117,8 +119,24 @@ export default function BillingPage() {
       }
 
       const { data, error } = await query;
-      if (error) throw error;
-      return (data || []) as unknown as ObligationItem[];
+      if (error) {
+        console.error('Error fetching obligations:', error);
+        throw error;
+      }
+      return (data || []).map((row: any) => ({
+        id: row.id,
+        student_id: row.student_id,
+        academic_year_id: row.academic_year_id,
+        amount: Number(row.period?.amount || row.remaining_amount || 0),
+        paid_amount: Number(row.paid_amount || 0),
+        remaining_amount: Number(row.remaining_amount || 0),
+        due_date: row.deadline,
+        status: row.status,
+        notes: row.period?.period_label,
+        created_at: row.created_at,
+        student: row.student,
+        contribution_type: row.period?.contribution_type || { name: row.period?.period_label || 'Iuran Kas', category: 'RUTIN' },
+      })) as ObligationItem[];
     },
     enabled: !!activeYear?.id,
   });
@@ -219,26 +237,26 @@ export default function BillingPage() {
         if (existingPeriod?.id) {
           periodId = existingPeriod.id;
         } else {
-          console.warn('Gagal membuat period, melanjutkan penerbitan tagihan:', periodError);
+          console.warn('Gagal membuat period:', periodError);
+          throw new Error('Gagal membuat atau menemukan periode iuran terkait.');
         }
       } else if (periodData?.id) {
         periodId = periodData.id;
       }
 
+      if (!periodId) {
+        throw new Error('ID periode iuran tidak valid untuk pembuatan tagihan.');
+      }
+
       // 2. Generate student obligations in bulk
       const newObligations = eligibleMembers.map((m) => ({
         student_id: m.student_id,
-        contribution_type_id: selectedContributionId,
         contribution_period_id: periodId,
         academic_year_id: activeYear.id,
-        amount: customAmount,
-        original_amount: customAmount,
         paid_amount: 0,
         remaining_amount: customAmount,
-        due_date: dueDate,
         deadline: dueDate,
         status: 'UNPAID',
-        notes: `Penagihan massal ${billingPeriodName}`,
       }));
 
       const { error: batchError } = await supabase

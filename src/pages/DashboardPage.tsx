@@ -117,12 +117,16 @@ function AdminDashboard() {
 
       const { data } = await supabase
         .from('payments')
-        .select('id, amount, payment_method, status, receipt_number, created_at, payer:profiles!payer_id(full_name, nim)')
+        .select('id, amount, payment_method, status, reference_number, created_at, student:profiles!student_id(full_name, nim)')
         .eq('academic_year_id', yearId)
         .order('created_at', { ascending: false })
         .limit(10);
 
-      return data ?? [];
+      return (data ?? []).map((p: any) => ({
+        ...p,
+        receipt_number: p.reference_number,
+        payer: p.student,
+      }));
     },
     enabled: !!activeYear?.id,
   });
@@ -136,18 +140,31 @@ function AdminDashboard() {
         .from('student_obligations')
         .select(`
           id,
-          amount,
+          paid_amount,
           remaining_amount,
-          due_date,
+          deadline,
           status,
           student:profiles!student_id(full_name, nim, phone),
-          contribution_type:contribution_types!contribution_type_id(name)
+          period:contribution_periods!contribution_period_id(
+            amount,
+            period_label,
+            contribution_type:contribution_types!contribution_type_id(name)
+          )
         `)
         .eq('academic_year_id', yearId)
         .in('status', ['UNPAID', 'PARTIALLY_PAID', 'OVERDUE'])
         .order('remaining_amount', { ascending: false })
         .limit(5);
-      return data || [];
+
+      return (data || []).map((row: any) => ({
+        id: row.id,
+        amount: Number(row.period?.amount || row.remaining_amount || 0),
+        remaining_amount: Number(row.remaining_amount || 0),
+        due_date: row.deadline,
+        status: row.status,
+        student: row.student,
+        contribution_type: row.period?.contribution_type || { name: row.period?.period_label || 'Iuran Kas' },
+      }));
     },
     enabled: !!activeYear?.id,
   });
@@ -588,14 +605,18 @@ function TreasurerDashboard() {
 
       const { data } = await supabase
         .from('payments')
-        .select('id, amount, payment_date, receipt_number, created_at, payer:profiles!payer_id(full_name, nim)')
+        .select('id, amount, payment_date, reference_number, created_at, student:profiles!student_id(full_name, nim)')
         .eq('academic_year_id', yearId)
         .eq('payment_method', 'QRIS')
         .eq('status', 'PENDING')
         .order('created_at', { ascending: true })
         .limit(5);
 
-      return data ?? [];
+      return (data ?? []).map((p: any) => ({
+        ...p,
+        receipt_number: p.reference_number,
+        payer: p.student,
+      }));
     },
     enabled: !!activeYear?.id,
   });
@@ -702,7 +723,7 @@ function StudentDashboard() {
       const [unpaidRes, overdueRes, approvedRes] = await Promise.all([
         supabase
           .from('student_obligations')
-          .select('amount, paid_amount, remaining_amount')
+          .select('paid_amount, remaining_amount')
           .eq('student_id', userId)
           .eq('academic_year_id', yearId)
           .in('status', ['UNPAID', 'PARTIALLY_PAID', 'OVERDUE']),
@@ -715,7 +736,7 @@ function StudentDashboard() {
         supabase
           .from('payments')
           .select('amount')
-          .or(`payer_id.eq.${userId},student_id.eq.${userId}`)
+          .eq('student_id', userId)
           .eq('academic_year_id', yearId)
           .eq('status', 'APPROVED'),
       ]);
@@ -747,14 +768,33 @@ function StudentDashboard() {
 
       const { data } = await supabase
         .from('student_obligations')
-        .select('id, amount, paid_amount, remaining_amount, due_date, status, contribution_types(name)')
+        .select(`
+          id,
+          paid_amount,
+          remaining_amount,
+          deadline,
+          status,
+          period:contribution_periods!contribution_period_id(
+            amount,
+            period_label,
+            contribution_type:contribution_types!contribution_type_id(name)
+          )
+        `)
         .eq('student_id', userId)
         .eq('academic_year_id', yearId)
         .in('status', ['UNPAID', 'PARTIALLY_PAID', 'OVERDUE'])
-        .order('due_date', { ascending: true })
+        .order('deadline', { ascending: true })
         .limit(5);
 
-      return data ?? [];
+      return (data ?? []).map((row: any) => ({
+        id: row.id,
+        amount: Number(row.period?.amount || row.remaining_amount || 0),
+        paid_amount: Number(row.paid_amount || 0),
+        remaining_amount: Number(row.remaining_amount || 0),
+        due_date: row.deadline,
+        status: row.status,
+        contribution_types: row.period?.contribution_type || { name: row.period?.period_label || 'Iuran Kas' },
+      }));
     },
     enabled: !!user?.id && !!activeYear?.id,
   });
@@ -768,13 +808,16 @@ function StudentDashboard() {
 
       const { data } = await supabase
         .from('payments')
-        .select('id, amount, payment_method, status, receipt_number, created_at')
-        .or(`payer_id.eq.${userId},student_id.eq.${userId}`)
+        .select('id, amount, payment_method, status, reference_number, created_at')
+        .eq('student_id', userId)
         .eq('academic_year_id', yearId)
         .order('created_at', { ascending: false })
         .limit(5);
 
-      return data ?? [];
+      return (data ?? []).map((p: any) => ({
+        ...p,
+        receipt_number: p.reference_number,
+      }));
     },
     enabled: !!user?.id && !!activeYear?.id,
   });

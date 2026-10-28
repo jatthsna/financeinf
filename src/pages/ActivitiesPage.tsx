@@ -105,10 +105,17 @@ export default function ActivitiesPage() {
           id,
           name,
           related_activity_id,
-          obligations:student_obligations(id, amount, paid_amount, remaining_amount, status)
+          periods:contribution_periods(
+            id,
+            amount,
+            obligations:student_obligations(id, paid_amount, remaining_amount, status)
+          )
         `)
         .eq('academic_year_id', activeYear.id);
-      if (error) throw error;
+      if (error) {
+        console.error('Error fetching linked contributions:', error);
+        return [];
+      }
       return data || [];
     },
     enabled: !!activeYear?.id,
@@ -121,7 +128,7 @@ export default function ActivitiesPage() {
     // 2. Direct other incomes (sponsorships, donations)
     const directIncome = (act.income ?? []).reduce((s, r) => s + Number(r.amount), 0);
 
-    // 3. Student fee contributions linked to this activity (by related_activity_id OR matching name)
+    // 3. Student fee contributions linked to this activity (by related_activity_id OR matching name/label)
     const matchedTypes = (linkedContributions || []).filter((ct: any) =>
       ct.related_activity_id === act.id ||
       ct.name.toLowerCase().includes(act.name.toLowerCase()) ||
@@ -133,10 +140,15 @@ export default function ActivitiesPage() {
     let totalTargetFee = 0;
 
     matchedTypes.forEach((ct: any) => {
-      (ct.obligations || []).forEach((ob: any) => {
-        studentFeePaid += Number(ob.paid_amount || 0);
-        studentFeeUnpaid += Number(ob.remaining_amount || 0);
-        totalTargetFee += Number(ob.amount || 0);
+      (ct.periods || []).forEach((period: any) => {
+        const periodAmount = Number(period.amount || 0);
+        (period.obligations || []).forEach((ob: any) => {
+          const paid = Number(ob.paid_amount || 0);
+          const remaining = Number(ob.remaining_amount || 0);
+          studentFeePaid += paid;
+          studentFeeUnpaid += remaining;
+          totalTargetFee += (periodAmount > 0 ? periodAmount : paid + remaining);
+        });
       });
     });
 

@@ -4,12 +4,13 @@ import { supabase } from '@/lib/supabase';
 import { useAcademicYear } from '@/hooks/useAcademicYear';
 import { useAuth } from '@/hooks/useAuth';
 import { formatCurrency, formatDate } from '@/lib/utils';
+import { compressImageToDataUrl } from '@/lib/imageUtils';
 import { PageHeader } from '@/components/ui/page-header';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { RupiahInput } from '@/components/ui/rupiah-input';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -21,7 +22,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { QrCode, UploadCloud, CheckCircle2, Clock, AlertCircle, FileText } from 'lucide-react';
+import { QrCode, UploadCloud, CheckCircle2, AlertCircle, RefreshCw, Eye } from 'lucide-react';
 
 interface MyObligation {
   id: string;
@@ -30,7 +31,18 @@ interface MyObligation {
   remaining_amount: number;
   due_date: string | null;
   status: 'UNPAID' | 'PARTIALLY_PAID' | 'PAID' | 'OVERDUE' | 'CANCELLED';
-  notes: string | null;
+  notes?: string | null;
+  period?: {
+    id: string;
+    amount: number;
+    period_label: string;
+    contribution_type?: {
+      id: string;
+      name: string;
+      description: string | null;
+      category: string;
+    };
+  };
   contribution_types?: {
     id: string;
     name: string;
@@ -52,6 +64,8 @@ export default function MyBillsPage() {
   const [transactionRef, setTransactionRef] = useState('');
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
   const [proofFile, setProofFile] = useState<File | null>(null);
+  const [proofPreviewUrl, setProofPreviewUrl] = useState<string | null>(null);
+  const [isCompressing, setIsCompressing] = useState(false);
   const [studentNotes, setStudentNotes] = useState('');
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSuccessDialogOpen, setIsSuccessDialogOpen] = useState(false);
@@ -65,20 +79,46 @@ export default function MyBillsPage() {
         .from('student_obligations')
         .select(`
           id,
-          amount,
           paid_amount,
           remaining_amount,
-          due_date,
+          deadline,
           status,
-          notes,
-          contribution_types:contribution_type_id(id, name, description, category)
+          period:contribution_periods!contribution_period_id(
+            id,
+            amount,
+            period_label,
+            contribution_type:contribution_types!contribution_type_id(
+              id,
+              name,
+              description,
+              category
+            )
+          )
         `)
         .eq('student_id', user.id)
         .eq('academic_year_id', activeYear.id)
-        .order('due_date', { ascending: true });
+        .order('deadline', { ascending: true });
 
-      if (error) throw error;
-      return (data || []) as unknown as MyObligation[];
+      if (error) {
+        console.error('Error fetching student obligations:', error);
+        return [];
+      }
+
+      return (data || []).map((row: any) => ({
+        id: row.id,
+        amount: Number(row.period?.amount || row.remaining_amount || 0),
+        paid_amount: Number(row.paid_amount || 0),
+        remaining_amount: Number(row.remaining_amount || 0),
+        due_date: row.deadline,
+        status: row.status,
+        period: row.period,
+        contribution_types: row.period?.contribution_type || {
+          id: '',
+          name: row.period?.period_label || 'Iuran Kas',
+          description: null,
+          category: 'RUTIN',
+        },
+      })) as MyObligation[];
     },
     enabled: !!user?.id && !!activeYear?.id,
   });
@@ -91,8 +131,13 @@ export default function MyBillsPage() {
         .from('app_settings')
         .select('value')
         .eq('key', 'qris_image_path')
-        .single();
-      return data?.value ? JSON.parse(data.value) : '';
+        .maybeSingle();
+      if (!data?.value) return '';
+      try {
+        return JSON.parse(data.value);
+      } catch {
+        return data.value;
+      }
     },
   });
 
@@ -102,9 +147,31 @@ export default function MyBillsPage() {
     setTransactionRef('');
     setPaymentDate(new Date().toISOString().split('T')[0]);
     setProofFile(null);
+    setProofPreviewUrl(null);
     setStudentNotes('');
     setSubmitError(null);
     setIsQrisModalOpen(true);
+  };
+
+  const handleProofFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setProofFile(file);
+    setIsCompressing(true);
+    try {
+      if (file.type.startsWith('image/')) {
+        const compressedBase64 = await compressImageToDataUrl(file, 900, 0.75);
+        setProofPreviewUrl(compressedBase64);
+      } else {
+        setProofPreviewUrl(null);
+      }
+    } catch (err) {
+      console.warn('Canvas compression error:', err);
+      setProofPreviewUrl(null);
+    } finally {
+      setIsCompressing(false);
+    }
   };
 
   // Submit QRIS Claim Mutation
@@ -122,33 +189,38 @@ export default function MyBillsPage() {
       if (!transactionRef.trim()) {
         throw new Error('Nomor referensi / RRN transaksi perbankan wajib diisi.');
       }
-      if (!proofFile) {
+      if (!proofFile && !proofPreviewUrl) {
         throw new Error('Wajib mengunggah bukti tangkapan layar transfer QRIS.');
       }
 
-      // 1. Upload proof file to Supabase Storage
-      let filePath = '';
-      try {
-        const fileExt = proofFile.name.split('.').pop();
-        const fileName = `${user.id}_${Date.now()}.${fileExt}`;
-        const { data: uploadData, error: uploadErr } = await supabase.storage
-          .from('payment-evidence')
-          .upload(fileName, proofFile, { upsert: true });
+      // 1. Prepare file path / base64 image data
+      // Base64 guarantee: if proofPreviewUrl exists (compressed image), use it directly
+      // so it will ALWAYS render on any device without storage dependency
+      let finalFilePath = proofPreviewUrl || '';
 
-        if (uploadErr) {
-          console.warn('Storage upload warning:', uploadErr.message);
-          filePath = URL.createObjectURL(proofFile);
-        } else if (uploadData?.path) {
-          const { data: publicUrlData } = supabase.storage
+      if (proofFile) {
+        try {
+          const fileExt = proofFile.name.split('.').pop() || 'jpg';
+          const fileName = `${user.id}_${Date.now()}.${fileExt}`;
+          const { data: uploadData, error: uploadErr } = await supabase.storage
             .from('payment-evidence')
-            .getPublicUrl(uploadData.path);
-          filePath = publicUrlData?.publicUrl || uploadData.path;
-        } else {
-          filePath = fileName;
+            .upload(fileName, proofFile, { upsert: true });
+
+          if (!uploadErr && uploadData?.path) {
+            const { data: publicUrlData } = supabase.storage
+              .from('payment-evidence')
+              .getPublicUrl(uploadData.path);
+            if (publicUrlData?.publicUrl) {
+              finalFilePath = publicUrlData.publicUrl;
+            }
+          }
+        } catch (err) {
+          console.warn('Storage upload fallback to base64 preview:', err);
         }
-      } catch (err) {
-        console.warn('Fallback proof URL');
-        filePath = URL.createObjectURL(proofFile);
+      }
+
+      if (!finalFilePath) {
+        throw new Error('Gagal memproses file bukti transfer.');
       }
 
       // 2. Insert payment record with PENDING status
@@ -156,9 +228,7 @@ export default function MyBillsPage() {
         .from('payments')
         .insert([
           {
-            receipt_number: transactionRef.trim(),
             reference_number: transactionRef.trim(),
-            payer_id: user.id,
             student_id: user.id,
             academic_year_id: activeYear.id,
             amount: claimAmount,
@@ -166,42 +236,51 @@ export default function MyBillsPage() {
             payment_date: paymentDate,
             status: 'PENDING',
             notes: studentNotes.trim() || 'Klaim QRIS via Portal Mahasiswa',
-            created_by: user.id,
+            qris_reference: transactionRef.trim(),
           },
         ])
         .select()
         .single();
 
-      if (paymentErr) throw paymentErr;
+      if (paymentErr) {
+        console.error('Insert payment error:', paymentErr);
+        throw new Error(`Gagal menyimpan data pembayaran: ${paymentErr.message}`);
+      }
 
       // 3. Connect payment allocation to selected obligation
       const { error: allocErr } = await supabase.from('payment_allocations').insert([
         {
           payment_id: paymentRecord.id,
-          student_obligation_id: selectedBill.id,
           obligation_id: selectedBill.id,
           amount: claimAmount,
         },
       ]);
-      if (allocErr) throw allocErr;
+      if (allocErr) {
+        console.error('Insert allocation error:', allocErr);
+        throw new Error(`Gagal menghubungkan alokasi tagihan: ${allocErr.message}`);
+      }
 
       // 4. Record evidence record
       const { error: evidErr } = await supabase.from('payment_evidence').insert([
         {
           payment_id: paymentRecord.id,
-          file_path: filePath,
-          file_name: proofFile.name,
-          mime_type: proofFile.type,
-          file_type: proofFile.type,
-          file_size: proofFile.size,
+          file_path: finalFilePath,
+          file_name: proofFile?.name || 'Bukti_Transfer.jpg',
+          file_type: proofFile?.type || 'image/jpeg',
+          file_size: proofFile?.size || finalFilePath.length,
           uploaded_by: user.id,
         },
       ]);
-      if (evidErr) throw evidErr;
+      if (evidErr) {
+        console.error('Insert evidence error:', evidErr);
+        throw new Error(`Gagal menyimpan bukti transfer: ${evidErr.message}`);
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['my_bills'] });
-      queryClient.invalidateQueries({ queryKey: ['my_payments'] });
+      queryClient.invalidateQueries({ queryKey: ['my_payments_history'] });
+      queryClient.invalidateQueries({ queryKey: ['student-recent-payments'] });
+      queryClient.invalidateQueries({ queryKey: ['student-summary'] });
       setIsQrisModalOpen(false);
       setIsSuccessDialogOpen(true);
     },
@@ -222,7 +301,7 @@ export default function MyBillsPage() {
 
       {/* Overview Cards */}
       <div className="grid gap-4 sm:grid-cols-2">
-        <Card className="border-stone-200/80 bg-white">
+        <Card className="border-stone-200/80 bg-white shadow-xs">
           <CardContent className="p-5 flex items-center justify-between">
             <div>
               <p className="text-xs font-semibold text-stone-500 uppercase tracking-wider">
@@ -243,7 +322,7 @@ export default function MyBillsPage() {
           </CardContent>
         </Card>
 
-        <Card className="border-stone-200/80 bg-white">
+        <Card className="border-stone-200/80 bg-white shadow-xs">
           <CardContent className="p-5 flex items-center justify-between">
             <div>
               <p className="text-xs font-semibold text-stone-500 uppercase tracking-wider">
@@ -284,10 +363,10 @@ export default function MyBillsPage() {
         ) : (
           <div className="space-y-3">
             {unpaidBills.map((bill) => (
-              <Card key={bill.id} className="border-stone-200/80 bg-white shadow-xs">
+              <Card key={bill.id} className="border-stone-200/80 bg-white shadow-xs hover:border-stone-300 transition-all">
                 <CardContent className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div className="space-y-1">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-bold text-base text-[#191B19]">
                         {bill.contribution_types?.name || 'Iuran Kas'}
                       </span>
@@ -334,7 +413,7 @@ export default function MyBillsPage() {
 
                     <Button
                       onClick={() => handleOpenPay(bill)}
-                      className="bg-[#174C3C] text-white hover:bg-[#12382c] text-xs h-9"
+                      className="bg-[#174C3C] text-white hover:bg-[#12382c] text-xs h-9 shadow-xs"
                     >
                       <QrCode className="mr-1.5 h-4 w-4" /> Bayar QRIS
                     </Button>
@@ -422,18 +501,31 @@ export default function MyBillsPage() {
                 </div>
 
                 <div className="space-y-1">
-                  <Label className="text-xs font-semibold text-stone-700">Unggah Bukti Transfer / Resi (JPG/PNG/PDF) *</Label>
+                  <Label className="text-xs font-semibold text-stone-700">Unggah Bukti Transfer / Resi (Foto/Screenshot) *</Label>
                   <div className="border border-dashed border-stone-300 rounded-lg p-3 text-center bg-stone-50/50 hover:bg-stone-50 transition-colors">
                     <input
                       type="file"
-                      accept="image/*,application/pdf"
-                      onChange={(e) => setProofFile(e.target.files?.[0] || null)}
-                      className="text-xs file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-xs file:bg-[#174C3C] file:text-white"
+                      accept="image/*"
+                      onChange={handleProofFileChange}
+                      className="text-xs file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-xs file:bg-[#174C3C] file:text-white cursor-pointer"
                     />
-                    {proofFile && (
-                      <p className="mt-1 text-[11px] font-semibold text-emerald-800">
-                        File terpilih: {proofFile.name} ({(proofFile.size / 1024).toFixed(1)} KB)
-                      </p>
+                    {isCompressing && (
+                      <div className="flex items-center justify-center gap-1.5 mt-2 text-stone-500 text-xs">
+                        <RefreshCw className="h-3.5 w-3.5 animate-spin text-[#174C3C]" />
+                        <span>Mengoptimalkan foto bukti...</span>
+                      </div>
+                    )}
+                    {proofPreviewUrl && !isCompressing && (
+                      <div className="mt-3 relative inline-block border rounded-lg overflow-hidden bg-white shadow-xs">
+                        <img
+                          src={proofPreviewUrl}
+                          alt="Pratinjau Bukti"
+                          className="max-h-36 max-w-full object-contain mx-auto"
+                        />
+                        <span className="block text-[10px] bg-stone-100 text-stone-600 py-0.5 px-2 border-t font-medium">
+                          Pratinjau Bukti Siap Dikirim
+                        </span>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -449,16 +541,26 @@ export default function MyBillsPage() {
                 </div>
               </div>
 
-              <DialogFooter className="pt-2">
-                <Button variant="outline" onClick={() => setIsQrisModalOpen(false)} className="text-xs">
+              <DialogFooter className="pt-3">
+                <Button
+                  variant="outline"
+                  onClick={() => setIsQrisModalOpen(false)}
+                  className="text-xs"
+                >
                   Batal
                 </Button>
                 <Button
                   onClick={() => submitQrisMutation.mutate()}
-                  disabled={submitQrisMutation.isPending || !proofFile || !transactionRef.trim()}
+                  disabled={
+                    submitQrisMutation.isPending ||
+                    claimAmount <= 0 ||
+                    !transactionRef.trim() ||
+                    (!proofFile && !proofPreviewUrl) ||
+                    isCompressing
+                  }
                   className="bg-[#174C3C] text-white hover:bg-[#12382c] text-xs font-medium"
                 >
-                  {submitQrisMutation.isPending ? 'Mengirim Bukti...' : 'Kirim Klaim Pembayaran'}
+                  {submitQrisMutation.isPending ? 'Mengirim Bukti...' : 'Kirim Bukti Pembayaran'}
                 </Button>
               </DialogFooter>
             </div>
@@ -466,24 +568,28 @@ export default function MyBillsPage() {
         </Dialog>
       )}
 
-      {/* Success Notification Dialog */}
+      {/* Success Dialog */}
       <Dialog open={isSuccessDialogOpen} onOpenChange={setIsSuccessDialogOpen}>
         <DialogContent className="max-w-sm bg-white text-center">
           <div className="py-4 space-y-3">
-            <div className="h-12 w-12 rounded-full bg-amber-50 text-amber-700 border border-amber-200 flex items-center justify-center mx-auto">
-              <Clock className="h-6 w-6" />
+            <div className="mx-auto w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600">
+              <CheckCircle2 className="h-7 w-7" />
             </div>
-            <h3 className="text-base font-bold text-[#191B19]">Klaim QRIS Berhasil Dikirim</h3>
-            <p className="text-xs text-stone-600 leading-relaxed">
-              Pengajuan bukti Anda telah masuk antrian verifikasi bendahara. Status tagihan akan otomatis terbarui setelah bendahara mengonfirmasi mutasi rekening.
+            <DialogTitle className="text-base font-bold text-[#191B19]">
+              Bukti Bayar Berhasil Dikirim!
+            </DialogTitle>
+            <p className="text-xs text-stone-500 leading-relaxed">
+              Pengajuan pembayaran QRIS Anda telah diterima sistem dan tersimpan aman. Bendahara Program Studi akan segera memverifikasi mutasi rekening.
             </p>
+          </div>
+          <DialogFooter>
             <Button
               onClick={() => setIsSuccessDialogOpen(false)}
-              className="w-full bg-[#174C3C] text-white hover:bg-[#12382c] text-xs font-medium mt-2"
+              className="w-full bg-[#174C3C] text-white hover:bg-[#12382c] text-xs font-medium"
             >
-              Mengerti & Lihat Riwayat
+              Kembali ke Tagihan Saya
             </Button>
-          </div>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

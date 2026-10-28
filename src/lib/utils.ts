@@ -171,3 +171,31 @@ export function getInitials(name: string): string {
   }
   return name.slice(0, 2).toUpperCase()
 }
+
+/**
+ * Convert numbers to Indonesian words (terbilang).
+ * E.g., 25000 -> "Dua Puluh Lima Ribu Rupiah"
+ */
+export function terbilang(n: number): string {
+  const bilangan = [
+    '', 'Satu', 'Dua', 'Tiga', 'Empat', 'Lima', 'Enam', 'Tujuh', 'Delapan', 'Sembilan', 'Sepuluh', 'Sebelas'
+  ];
+
+  function toWords(num: number): string {
+    const n = Math.floor(Math.abs(num));
+    if (n < 12) return bilangan[n];
+    if (n < 20) return toWords(n - 10) + ' Belas';
+    if (n < 100) return toWords(Math.floor(n / 10)) + ' Puluh' + (n % 10 !== 0 ? ' ' + toWords(n % 10) : '');
+    if (n < 200) return 'Seratus' + (n % 100 !== 0 ? ' ' + toWords(n % 100) : '');
+    if (n < 1000) return toWords(Math.floor(n / 100)) + ' Ratus' + (n % 100 !== 0 ? ' ' + toWords(n % 100) : '');
+    if (n < 2000) return 'Seribu' + (n % 1000 !== 0 ? ' ' + toWords(n % 1000) : '');
+    if (n < 1000000) return toWords(Math.floor(n / 1000)) + ' Ribu' + (n % 1000 !== 0 ? ' ' + toWords(n % 1000) : '');
+    if (n < 1000000000) return toWords(Math.floor(n / 1000000)) + ' Juta' + (n % 1000000 !== 0 ? ' ' + toWords(n % 1000000) : '');
+    if (n < 1000000000000) return toWords(Math.floor(n / 1000000000)) + ' Miliar' + (n % 1000000000 !== 0 ? ' ' + toWords(n % 1000000000) : '');
+    return toWords(Math.floor(n / 1000000000000)) + ' Triliun' + (n % 1000000000000 !== 0 ? ' ' + toWords(n % 1000000000000) : '');
+  }
+
+  if (n === 0) return 'Nol Rupiah';
+  return `${toWords(n).trim()} Rupiah`;
+}
+

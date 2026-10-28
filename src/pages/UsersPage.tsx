@@ -92,16 +92,19 @@ export default function UsersPage() {
           .from('student_obligations')
           .select(`
             id,
-            amount,
             paid_amount,
             remaining_amount,
-            due_date,
+            deadline,
             status,
-            contribution_type:contribution_types!contribution_type_id(name, category)
+            period:contribution_periods!contribution_period_id(
+              amount,
+              period_label,
+              contribution_type:contribution_types!contribution_type_id(name, category)
+            )
           `)
           .eq('student_id', selectedStudentForHistory.id)
           .eq('academic_year_id', activeYear.id)
-          .order('due_date', { ascending: true }),
+          .order('deadline', { ascending: true }),
         supabase
           .from('payments')
           .select(`
@@ -109,16 +112,24 @@ export default function UsersPage() {
             amount,
             payment_method,
             payment_date,
-            receipt_number,
+            reference_number,
             status
           `)
-          .or(`student_id.eq.${selectedStudentForHistory.id},payer_id.eq.${selectedStudentForHistory.id}`)
+          .eq('student_id', selectedStudentForHistory.id)
           .eq('academic_year_id', activeYear.id)
           .order('payment_date', { ascending: false }),
       ]);
 
-      const obligations = (obligationsRes.data || []) as any[];
-      const payments = (paymentsRes.data || []) as any[];
+      const obligations = (obligationsRes.data || []).map((o: any) => ({
+        ...o,
+        amount: Number(o.period?.amount || o.remaining_amount || 0),
+        due_date: o.deadline,
+        contribution_type: o.period?.contribution_type || { name: o.period?.period_label || 'Iuran Kas', category: 'RUTIN' },
+      }));
+      const payments = (paymentsRes.data || []).map((p: any) => ({
+        ...p,
+        receipt_number: p.reference_number,
+      }));
 
       const totalBilled = obligations.reduce((s, o) => s + Number(o.amount || 0), 0);
       const totalPaid = obligations.reduce((s, o) => s + Number(o.paid_amount || 0), 0);

@@ -10,16 +10,13 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-} from '@/components/ui/dialog';
-import { CreditCard, Printer, CheckCircle, Clock, XCircle, AlertCircle } from 'lucide-react';
+import { CreditCard, Printer, CheckCircle, Clock, XCircle, AlertCircle, Eye } from 'lucide-react';
+import { OfficialReceiptModal, type OfficialReceiptData } from '@/components/OfficialReceiptModal';
+import { EvidenceViewerModal } from '@/components/EvidenceViewerModal';
 
 interface MyPaymentItem {
   id: string;
-  receipt_number: string;
+  reference_number: string;
   amount: number;
   payment_method: 'CASH' | 'QRIS';
   payment_date: string;
@@ -27,17 +24,37 @@ interface MyPaymentItem {
   notes: string | null;
   rejection_reason: string | null;
   created_at: string;
-  verified_at: string | null;
-  verifier?: {
+  reviewed_at: string | null;
+  reviewer?: {
     full_name: string;
   };
+  allocations?: Array<{
+    amount: number;
+    obligation?: {
+      period?: {
+        period_label: string;
+        contribution_type?: {
+          name: string;
+        };
+      };
+    };
+  }>;
+  evidence?: Array<{
+    id: string;
+    file_path: string;
+    file_name: string;
+  }>;
 }
 
 export default function MyPaymentsPage() {
   const { activeYear } = useAcademicYear();
   const { user, profile } = useAuth();
 
-  const [receiptPayment, setReceiptPayment] = useState<MyPaymentItem | null>(null);
+  const [receiptData, setReceiptData] = useState<OfficialReceiptData | null>(null);
+  const [isReceiptOpen, setIsReceiptOpen] = useState(false);
+
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const [lightboxFileName, setLightboxFileName] = useState<string>('bukti-transfer.jpg');
 
   const { data: myPayments, isLoading } = useQuery({
     queryKey: ['my_payments_history', user?.id, activeYear?.id],
@@ -47,7 +64,7 @@ export default function MyPaymentsPage() {
         .from('payments')
         .select(`
           id,
-          receipt_number,
+          reference_number,
           amount,
           payment_method,
           payment_date,
@@ -55,18 +72,55 @@ export default function MyPaymentsPage() {
           notes,
           rejection_reason,
           created_at,
-          verified_at,
-          verifier:profiles!verified_by(full_name)
+          reviewed_at,
+          reviewer:profiles!reviewed_by(full_name),
+          allocations:payment_allocations(
+            amount,
+            obligation:student_obligations(
+              period:contribution_periods!contribution_period_id(
+                period_label,
+                contribution_type:contribution_types!contribution_type_id(name)
+              )
+            )
+          ),
+          evidence:payment_evidence(
+            id,
+            file_path,
+            file_name
+          )
         `)
-        .or(`payer_id.eq.${user.id},student_id.eq.${user.id}`)
+        .eq('student_id', user.id)
         .eq('academic_year_id', activeYear.id)
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error fetching student payments:', error);
+        return [];
+      }
       return (data || []) as unknown as MyPaymentItem[];
     },
     enabled: !!user?.id && !!activeYear?.id,
   });
+
+  const handleOpenReceipt = (p: MyPaymentItem) => {
+    const purposeName = p.allocations?.[0]?.obligation?.period?.contribution_type?.name 
+      || p.allocations?.[0]?.obligation?.period?.period_label
+      || 'Iuran Kas Mahasiswa';
+
+    setReceiptData({
+      receipt_number: p.reference_number || `KWT-${p.id.slice(0, 8)}`,
+      student_name: profile?.full_name || 'Mahasiswa Informatika',
+      student_nim: profile?.nim || '-',
+      amount: p.amount,
+      payment_method: p.payment_method,
+      payment_date: p.payment_date || p.created_at,
+      verified_by_name: p.reviewer?.full_name || 'Bendahara Kas Informatika',
+      verified_at: p.reviewed_at || p.created_at,
+      notes: p.notes,
+      purpose: purposeName,
+    });
+    setIsReceiptOpen(true);
+  };
 
   return (
     <div className="space-y-6">
@@ -90,12 +144,12 @@ export default function MyPaymentsPage() {
       ) : (
         <div className="space-y-3">
           {myPayments.map((p) => (
-            <Card key={p.id} className="border-stone-200/80 bg-white shadow-xs">
+            <Card key={p.id} className="border-stone-200/80 bg-white shadow-xs hover:border-stone-300 transition-all">
               <CardContent className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="space-y-1">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-mono text-xs font-bold text-[#174C3C]">
-                      {p.receipt_number || 'KLAIM-QRIS'}
+                      {p.reference_number || 'KLAIM-QRIS'}
                     </span>
                     <Badge variant="outline" className="text-[10px]">
                       {p.payment_method === 'CASH' ? 'Kas Tunai' : 'QRIS Resmi'}
@@ -117,7 +171,7 @@ export default function MyPaymentsPage() {
                   )}
                 </div>
 
-                <div className="flex items-center justify-between sm:justify-end gap-4 border-t sm:border-t-0 pt-3 sm:pt-0">
+                <div className="flex items-center justify-between sm:justify-end gap-3 border-t sm:border-t-0 pt-3 sm:pt-0">
                   <div className="text-left sm:text-right">
                     <span className="text-[11px] text-stone-500 uppercase font-semibold">
                       Jumlah Disetor
@@ -142,16 +196,33 @@ export default function MyPaymentsPage() {
                     </div>
                   </div>
 
-                  {p.status === 'APPROVED' && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setReceiptPayment(p)}
-                      className="text-xs h-9 border-stone-200 text-stone-800 hover:bg-stone-50"
-                    >
-                      <Printer className="mr-1.5 h-3.5 w-3.5" /> Kuitansi
-                    </Button>
-                  )}
+                  <div className="flex items-center gap-1.5">
+                    {p.evidence && p.evidence.length > 0 && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setLightboxUrl(p.evidence![0].file_path);
+                          setLightboxFileName(p.evidence![0].file_name || 'bukti-transfer.jpg');
+                        }}
+                        className="text-xs h-9 text-stone-600 hover:text-stone-900 border border-stone-200"
+                        title="Lihat Bukti yang Anda Unggah"
+                      >
+                        <Eye className="mr-1 h-3.5 w-3.5 text-stone-500" /> Bukti
+                      </Button>
+                    )}
+
+                    {p.status === 'APPROVED' && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleOpenReceipt(p)}
+                        className="text-xs h-9 border-stone-200 text-stone-800 hover:bg-stone-50 font-medium"
+                      >
+                        <Printer className="mr-1.5 h-3.5 w-3.5" /> Kuitansi
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -159,74 +230,21 @@ export default function MyPaymentsPage() {
         </div>
       )}
 
-      {/* Official Receipt Dialog */}
-      {receiptPayment && (
-        <Dialog open={!!receiptPayment} onOpenChange={() => setReceiptPayment(null)}>
-          <DialogContent className="max-w-md bg-white">
-            <div className="p-4 border-2 border-dashed border-[#174C3C]/40 rounded-xl space-y-4">
-              <div className="text-center pb-3 border-b border-stone-200">
-                <span className="text-[10px] tracking-widest uppercase font-bold text-stone-400">
-                  Tanda Bukti Pembayaran Sah
-                </span>
-                <h3 className="text-base font-bold text-[#191B19]">KAS INFORMATIKA</h3>
-                <p className="text-[11px] text-stone-500">Program Studi Informatika</p>
-              </div>
+      {/* Lightbox Evidence Modal */}
+      <EvidenceViewerModal
+        open={!!lightboxUrl}
+        onOpenChange={(open) => !open && setLightboxUrl(null)}
+        imageUrl={lightboxUrl}
+        fileName={lightboxFileName}
+        title="Bukti Transfer yang Anda Kirim"
+      />
 
-              <div className="space-y-2 text-xs text-stone-700">
-                <div className="flex justify-between">
-                  <span className="text-stone-500">No. Kuitansi:</span>
-                  <span className="font-mono font-bold">{receiptPayment.receipt_number}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-stone-500">Nama Mahasiswa:</span>
-                  <span className="font-semibold">{profile?.full_name}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-stone-500">NIM:</span>
-                  <span>{profile?.nim || '-'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-stone-500">Metode:</span>
-                  <span>{receiptPayment.payment_method === 'CASH' ? 'Kas Tunai' : 'QRIS Resmi'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-stone-500">Tanggal Bayar:</span>
-                  <span>{formatDate(receiptPayment.payment_date || receiptPayment.created_at, 'with-time')}</span>
-                </div>
-                <div className="flex justify-between pt-2 border-t border-stone-100 text-sm font-bold text-[#191B19]">
-                  <span>Total Diterima:</span>
-                  <span className="text-[#174C3C]">{formatCurrency(receiptPayment.amount)}</span>
-                </div>
-              </div>
-
-              <div className="pt-4 border-t border-stone-200 flex justify-between items-end text-[11px] text-stone-500">
-                <div>
-                  <p>Diverifikasi oleh:</p>
-                  <p className="font-semibold text-stone-800 mt-4">
-                    {receiptPayment.verifier?.full_name || 'Bendahara Prodi'}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <span className="inline-block px-2 py-0.5 rounded bg-emerald-100 text-emerald-900 font-bold text-[10px]">
-                    LUNAS
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <DialogFooter className="pt-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => window.print()}
-                className="w-full text-xs"
-              >
-                <Printer className="mr-1 h-3.5 w-3.5" /> Cetak / Simpan Kuitansi
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      )}
+      {/* Official Receipt Modal */}
+      <OfficialReceiptModal
+        open={isReceiptOpen}
+        onOpenChange={setIsReceiptOpen}
+        data={receiptData}
+      />
     </div>
   );
 }

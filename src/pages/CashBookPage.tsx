@@ -75,7 +75,7 @@ export default function CashBookPage() {
       const [paymentsRes, incomesRes, expensesRes] = await Promise.all([
         supabase
           .from('payments')
-          .select('id, amount, payment_method, payment_date, receipt_number, created_at, payer:profiles!payer_id(full_name, nim)')
+          .select('id, amount, payment_method, payment_date, reference_number, created_at, student:profiles!student_id(full_name, nim)')
           .eq('academic_year_id', yearId)
           .eq('status', 'APPROVED'),
         supabase
@@ -94,11 +94,11 @@ export default function CashBookPage() {
 
       // Add payments
       (paymentsRes.data || []).forEach((p: any) => {
-        const payerName = p.payer?.full_name ? `${p.payer.full_name} (${p.payer.nim || '-'})` : 'Mahasiswa';
+        const payerName = p.student?.full_name ? `${p.student.full_name} (${p.student.nim || '-'})` : 'Mahasiswa';
         entries.push({
           id: p.id,
           date: p.payment_date || p.created_at,
-          refNumber: p.receipt_number || 'KWT-KAS',
+          refNumber: p.reference_number || 'KWT-KAS',
           type: 'INCOME',
           category: 'Iuran Mahasiswa',
           description: `Pembayaran kas oleh ${payerName}`,

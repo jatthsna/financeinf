@@ -38,12 +38,12 @@ export default function ReportsPage() {
         .from('payments')
         .select(`
           id,
-          receipt_number,
+          reference_number,
           amount,
           payment_method,
           payment_date,
           status,
-          payer:profiles!payer_id(full_name, nim)
+          student:profiles!student_id(full_name, nim)
         `)
         .eq('academic_year_id', activeYear.id)
         .eq('status', 'APPROVED');
@@ -88,13 +88,16 @@ export default function ReportsPage() {
         .from('student_obligations')
         .select(`
           id,
-          amount,
           paid_amount,
           remaining_amount,
-          due_date,
+          deadline,
           status,
           student:profiles!student_id(full_name, nim),
-          contribution_type:contribution_types!contribution_type_id(name)
+          period:contribution_periods!contribution_period_id(
+            amount,
+            period_label,
+            contribution_type:contribution_types!contribution_type_id(name)
+          )
         `)
         .eq('academic_year_id', activeYear.id)
         .in('status', ['UNPAID', 'PARTIALLY_PAID', 'OVERDUE']);
@@ -106,10 +109,19 @@ export default function ReportsPage() {
         arrQuery,
       ]);
 
-      const payments = (payRes.data || []) as any[];
+      const payments = (payRes.data || []).map((p: any) => ({
+        ...p,
+        receipt_number: p.reference_number,
+        payer: p.student,
+      }));
       const incomes = (incRes.data || []) as any[];
       const expenses = (expRes.data || []) as any[];
-      const arrears = (arrRes.data || []) as any[];
+      const arrears = (arrRes.data || []).map((a: any) => ({
+        ...a,
+        amount: Number(a.period?.amount || a.remaining_amount || 0),
+        due_date: a.deadline,
+        contribution_type: a.period?.contribution_type || { name: a.period?.period_label || 'Iuran Kas' },
+      }));
 
       const totalStudentFees = payments.reduce((sum, p) => sum + Number(p.amount), 0);
       const totalOtherIncome = incomes.reduce((sum, i) => sum + Number(i.amount), 0);
