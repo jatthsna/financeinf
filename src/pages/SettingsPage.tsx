@@ -163,7 +163,7 @@ export default function SettingsPage() {
       // 2. Upsert app_settings entries with strict error checking
       const updates = [
         { key: 'organization_name', value: JSON.stringify(orgName), description: 'Nama organisasi' },
-        { key: 'default_contribution_amount', value: String(defaultAmount || 10000), description: 'Jumlah iuran default' },
+        { key: 'default_contribution_amount', value: JSON.stringify(defaultAmount || 10000), description: 'Jumlah iuran default' },
         { key: 'default_billing_frequency', value: JSON.stringify(defaultFrequency), description: 'Frekuensi penagihan default' },
         { key: 'qris_image_path', value: JSON.stringify(finalQrisUrl), description: 'Gambar QRIS resmi' },
         { key: 'timezone', value: JSON.stringify('Asia/Jakarta'), description: 'Zona waktu' },

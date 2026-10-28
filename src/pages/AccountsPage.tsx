@@ -44,7 +44,7 @@ interface CashAccount {
 export default function AccountsPage() {
   const queryClient = useQueryClient();
   const { activeYear } = useAcademicYear();
-  const { user, isAdmin } = useAuth();
+  const { user, isStaff } = useAuth();
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [formData, setFormData] = useState({
@@ -156,7 +156,7 @@ export default function AccountsPage() {
         title="Rekening Kas & Rekonsiliasi"
         description="Kelola akun kas tunai fisik, rekening perbankan prodi, dan pembuktian rekonsiliasi saldo buku."
       >
-        {isAdmin && (
+        {isStaff && (
           <Button
             onClick={() => {
               setFormError(null);
