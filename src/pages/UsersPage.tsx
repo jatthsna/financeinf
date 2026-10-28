@@ -48,6 +48,7 @@ import {
   Wallet,
   Clock,
   ArrowRight,
+  Trash2,
 } from 'lucide-react';
 
 interface ProfileItem {
@@ -80,6 +81,7 @@ export default function UsersPage() {
     autoEnrollActiveYear: true,
   });
   const [formError, setFormError] = useState<string | null>(null);
+  const [userToDelete, setUserToDelete] = useState<ProfileItem | null>(null);
 
   // Student financial history query
   const { data: studentFinancials, isLoading: historyLoading } = useQuery({
@@ -252,6 +254,29 @@ export default function UsersPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['memberships_active_year'] });
+    },
+  });
+
+  // Delete User Mutation
+  const deleteUserMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      // 1. Remove memberships
+      await supabase.from('student_memberships').delete().eq('student_id', userId);
+      // 2. Remove obligations
+      await supabase.from('student_obligations').delete().eq('student_id', userId);
+      // 3. Remove profile record
+      const { error } = await supabase.from('profiles').delete().eq('id', userId);
+      if (error) {
+        throw new Error(`Gagal menghapus pengguna: ${error.message}`);
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users_list'] });
+      queryClient.invalidateQueries({ queryKey: ['memberships_active_year'] });
+      setUserToDelete(null);
+    },
+    onError: (err: any) => {
+      alert(err.message || 'Gagal menghapus pengguna.');
     },
   });
 
@@ -508,6 +533,16 @@ export default function UsersPage() {
                             className="text-xs h-7 text-stone-500 hover:text-stone-900"
                           >
                             {u.is_active ? 'Nonaktifkan' : 'Aktifkan'}
+                          </Button>
+
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setUserToDelete(u)}
+                            className="text-xs h-7 w-7 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
+                            title="Hapus Pengguna Secara Permanen"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
                           </Button>
                         </div>
                       )}
@@ -767,6 +802,48 @@ export default function UsersPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Delete User Confirmation Dialog */}
+      {userToDelete && (
+        <Dialog open={!!userToDelete} onOpenChange={() => setUserToDelete(null)}>
+          <DialogContent className="max-w-md bg-white">
+            <DialogHeader>
+              <DialogTitle className="text-base font-bold text-red-600 flex items-center gap-2">
+                <Trash2 className="h-5 w-5" /> Hapus Pengguna Ini?
+              </DialogTitle>
+              <DialogDescription className="text-xs text-stone-500">
+                Tindakan ini akan menghapus data profil pengguna dan status keanggotaannya secara aman.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="p-3 bg-red-50/70 border border-red-200 rounded-lg text-xs space-y-1.5">
+              <p><strong>Nama:</strong> {userToDelete.full_name}</p>
+              <p><strong>Email:</strong> {userToDelete.email}</p>
+              <p><strong>NIM:</strong> {userToDelete.nim || '-'}</p>
+              <p><strong>Peran:</strong> {userToDelete.role}</p>
+            </div>
+
+            <DialogFooter className="pt-2 flex justify-between gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setUserToDelete(null)}
+                className="text-xs"
+              >
+                Batal
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => deleteUserMutation.mutate(userToDelete.id)}
+                disabled={deleteUserMutation.isPending}
+                className="bg-red-600 text-white hover:bg-red-700 text-xs font-semibold"
+              >
+                {deleteUserMutation.isPending ? 'Menghapus...' : 'Ya, Hapus Pengguna'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }
