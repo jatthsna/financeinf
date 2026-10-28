@@ -43,19 +43,15 @@ interface IncomeItem {
   reference_number: string;
   academic_year_id: string;
   amount: number;
-  income_category: 'DONASI' | 'SPONSOR' | 'PENDAPATAN_KEGIATAN' | 'LAINNYA';
-  source_payer: string | null;
+  category: string;
+  source: string | null;
   description: string;
-  activity_id: string | null;
-  receipt_file_path: string | null;
-  status: 'DRAFT' | 'PENDING' | 'APPROVED' | 'REJECTED' | 'POSTED' | 'REVERSED';
-  recorded_by: string;
+  date?: string;
+  status: string;
+  recorded_by?: string;
   created_at: string;
   recorder?: {
     full_name: string;
-  };
-  activity?: {
-    name: string;
   };
 }
 
@@ -71,10 +67,9 @@ export default function IncomePage() {
   // Form states
   const [formData, setFormData] = useState({
     source_payer: '',
-    income_category: 'DONASI' as const,
+    income_category: 'DONASI',
     amount: 100000,
     description: '',
-    activity_id: '',
   });
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -89,16 +84,14 @@ export default function IncomePage() {
           reference_number,
           academic_year_id,
           amount,
-          income_category,
-          source_payer,
+          category,
+          source,
           description,
-          activity_id,
-          receipt_file_path,
           status,
+          date,
           recorded_by,
           created_at,
-          recorder:profiles!recorded_by(full_name),
-          activity:activities(name)
+          recorder:profiles!recorded_by(full_name)
         `)
         .order('created_at', { ascending: false });
 
@@ -111,20 +104,6 @@ export default function IncomePage() {
       return (data || []) as unknown as IncomeItem[];
     },
     enabled: !!activeYear?.id,
-  });
-
-  // Fetch activities for dropdown
-  const { data: activities } = useQuery({
-    queryKey: ['activities_dropdown', activeYear?.id],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('activities')
-        .select('id, name')
-        .eq('academic_year_id', activeYear?.id || '');
-      if (error) throw error;
-      return data || [];
-    },
-    enabled: !!activeYear?.id && isDialogOpen,
   });
 
   const saveMutation = useMutation({
@@ -142,12 +121,9 @@ export default function IncomePage() {
           date: new Date().toISOString().split('T')[0],
           academic_year_id: activeYear.id,
           amount: payload.amount,
-          income_category: payload.income_category,
           category: payload.income_category,
-          source_payer: payload.source_payer.trim(),
           source: payload.source_payer.trim(),
           description: payload.description.trim(),
-          activity_id: payload.activity_id || null,
           status: 'POSTED',
           recorded_by: user?.id,
         },
@@ -163,7 +139,6 @@ export default function IncomePage() {
         income_category: 'DONASI',
         amount: 100000,
         description: '',
-        activity_id: '',
       });
       setFormError(null);
     },
@@ -173,11 +148,14 @@ export default function IncomePage() {
   });
 
   const filteredIncome = (incomeList || []).filter((item) => {
+    const src = item.source || '';
+    const desc = item.description || '';
+    const ref = item.reference_number || '';
     const matchesSearch =
-      (item.source_payer && item.source_payer.toLowerCase().includes(search.toLowerCase())) ||
-      item.description.toLowerCase().includes(search.toLowerCase()) ||
-      item.reference_number.toLowerCase().includes(search.toLowerCase());
-    const matchesCat = filterCategory === 'ALL' || item.income_category === filterCategory;
+      src.toLowerCase().includes(search.toLowerCase()) ||
+      desc.toLowerCase().includes(search.toLowerCase()) ||
+      ref.toLowerCase().includes(search.toLowerCase());
+    const matchesCat = filterCategory === 'ALL' || item.category === filterCategory;
     return matchesSearch && matchesCat;
   });
 
@@ -285,21 +263,16 @@ export default function IncomePage() {
                     {item.reference_number}
                   </TableCell>
                   <TableCell>
-                    <p className="font-semibold text-sm text-[#191B19]">{item.source_payer || 'Umum'}</p>
-                    <p className="text-[11px] text-stone-500">{formatDate(item.created_at)}</p>
+                    <p className="font-semibold text-sm text-[#191B19]">{item.source || 'Umum'}</p>
+                    <p className="text-[11px] text-stone-500">{formatDate(item.date || item.created_at)}</p>
                   </TableCell>
                   <TableCell>
                     <Badge variant="outline" className="text-xs">
-                      {item.income_category}
+                      {item.category}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-xs text-stone-600 max-w-xs truncate">
                     {item.description}
-                    {item.activity?.name && (
-                      <span className="block text-[10px] text-[#174C3C] font-semibold mt-0.5">
-                        Terkait: {item.activity.name}
-                      </span>
-                    )}
                   </TableCell>
                   <TableCell className="text-right font-bold text-sm text-[#174C3C]">
                     +{formatCurrency(item.amount)}
@@ -370,26 +343,6 @@ export default function IncomePage() {
                   placeholder="0"
                 />
               </div>
-            </div>
-
-            <div className="space-y-1">
-              <Label className="text-xs font-semibold text-stone-700">Terkait Kegiatan (Opsional)</Label>
-              <Select
-                value={formData.activity_id}
-                onValueChange={(val) => setFormData({ ...formData, activity_id: val })}
-              >
-                <SelectTrigger className="text-xs">
-                  <SelectValue placeholder="Pilih kegiatan jika ada..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="">Bukan Kegiatan Khusus (Kas Umum)</SelectItem>
-                  {(activities || []).map((a) => (
-                    <SelectItem key={a.id} value={a.id}>
-                      {a.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
             </div>
 
             <div className="space-y-1">

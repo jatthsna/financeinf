@@ -120,16 +120,16 @@ export default function PublicTransparencyPage() {
       }
 
       // Safe fallback calculation
-      const [incomeRes, expenseRes, studentPaymentsRes, obligationsRes, activitiesRes] =
+      const [incomeRes, expenseRes, studentPaymentsRes, obligationsRes] =
         await Promise.all([
           supabase
             .from('income_records')
-            .select('id, reference_number, date, income_category, description, amount, source_payer, created_at')
+            .select('id, reference_number, date, category, description, amount, source, created_at')
             .eq(targetYearId ? 'academic_year_id' : 'id', targetYearId || '')
             .in('status', ['APPROVED', 'POSTED']),
           supabase
             .from('expenses')
-            .select('id, reference_number, transaction_date, expense_category, description, amount, vendor_recipient, created_at')
+            .select('id, reference_number, transaction_date, category, description, amount, vendor, created_at')
             .eq(targetYearId ? 'academic_year_id' : 'id', targetYearId || '')
             .in('status', ['APPROVED', 'POSTED']),
           supabase
@@ -139,17 +139,23 @@ export default function PublicTransparencyPage() {
             .eq('status', 'APPROVED'),
           supabase
             .from('student_obligations')
-            .select('amount, paid_amount')
+            .select('paid_amount, remaining_amount')
             .eq(targetYearId ? 'academic_year_id' : 'id', targetYearId || ''),
-          supabase
-            .from('activities')
-            .select('id, name, description, start_date, end_date, status, total_budget')
-            .eq(targetYearId ? 'academic_year_id' : 'id', targetYearId || '')
-            .order('created_at', { ascending: false })
-            .limit(6),
         ]);
 
-      const otherIncome = (incomeRes.data ?? []).reduce(
+      const mappedIncomes = (incomeRes.data ?? []).map((r: any) => ({
+        ...r,
+        income_category: r.category,
+        source_payer: r.source,
+      }));
+
+      const mappedExpenses = (expenseRes.data ?? []).map((r: any) => ({
+        ...r,
+        expense_category: r.category,
+        vendor_recipient: r.vendor,
+      }));
+
+      const otherIncome = mappedIncomes.reduce(
         (acc, r) => acc + Number(r.amount || 0),
         0
       );
@@ -158,18 +164,18 @@ export default function PublicTransparencyPage() {
         0
       );
       const totalIncome = otherIncome + studentPayments;
-      const totalExpenses = (expenseRes.data ?? []).reduce(
+      const totalExpenses = mappedExpenses.reduce(
         (acc, r) => acc + Number(r.amount || 0),
         0
       );
       const cashBalance = totalIncome - totalExpenses;
 
-      const totalObligations = (obligationsRes.data ?? []).reduce(
-        (acc, r) => acc + Number(r.amount || 0),
-        0
-      );
       const totalObligationsPaid = (obligationsRes.data ?? []).reduce(
         (acc, r) => acc + Number(r.paid_amount || 0),
+        0
+      );
+      const totalObligations = (obligationsRes.data ?? []).reduce(
+        (acc, r) => acc + Number(r.paid_amount || 0) + Number(r.remaining_amount || 0),
         0
       );
       const complianceRate =
@@ -179,7 +185,7 @@ export default function PublicTransparencyPage() {
 
       // Group expense categories
       const categoryMap = new Map<string, { count: number; total_amount: number }>();
-      (expenseRes.data ?? []).forEach((e) => {
+      mappedExpenses.forEach((e) => {
         const cat = e.expense_category || 'OPERASIONAL';
         const cur = categoryMap.get(cat) || { count: 0, total_amount: 0 };
         categoryMap.set(cat, {
@@ -206,10 +212,10 @@ export default function PublicTransparencyPage() {
         total_obligations_paid: totalObligationsPaid,
         compliance_rate: complianceRate,
         student_count: 26,
-        recent_expenses: (expenseRes.data || []) as any,
-        recent_income: (incomeRes.data || []) as any,
+        recent_expenses: mappedExpenses,
+        recent_income: mappedIncomes,
         expense_categories: expenseCategories,
-        activities: (activitiesRes.data || []) as any,
+        activities: [],
       };
     },
     enabled: true,

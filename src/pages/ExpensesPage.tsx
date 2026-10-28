@@ -43,19 +43,16 @@ interface ExpenseItem {
   reference_number: string;
   academic_year_id: string;
   amount: number;
-  expense_category: 'OPERASIONAL' | 'KEGIATAN' | 'PERLENGKAPAN' | 'KONSUMSI' | 'TRANSPORTASI' | 'DOKUMENTASI' | 'SEWA' | 'LAINNYA';
+  category: string;
   description: string;
-  vendor_recipient: string | null;
-  activity_id: string | null;
+  vendor: string | null;
   account_id: string | null;
   status: 'DRAFT' | 'PENDING' | 'APPROVED' | 'REJECTED' | 'POSTED' | 'REVERSED';
+  transaction_date?: string;
   recorded_by: string;
   created_at: string;
   recorder?: {
     full_name: string;
-  };
-  activity?: {
-    name: string;
   };
 }
 
@@ -70,11 +67,10 @@ export default function ExpensesPage() {
 
   // Form states
   const [formData, setFormData] = useState({
-    expense_category: 'OPERASIONAL' as const,
+    expense_category: 'OPERASIONAL',
     amount: 50000,
     vendor_recipient: '',
     description: '',
-    activity_id: '',
   });
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -120,16 +116,15 @@ export default function ExpensesPage() {
           reference_number,
           academic_year_id,
           amount,
-          expense_category,
+          category,
           description,
-          vendor_recipient,
-          activity_id,
+          vendor,
           account_id,
           status,
+          transaction_date,
           recorded_by,
           created_at,
-          recorder:profiles!recorded_by(full_name),
-          activity:activities(name)
+          recorder:profiles!recorded_by(full_name)
         `)
         .order('created_at', { ascending: false });
 
@@ -142,20 +137,6 @@ export default function ExpensesPage() {
       return (data || []) as unknown as ExpenseItem[];
     },
     enabled: !!activeYear?.id,
-  });
-
-  // Fetch activities for dropdown
-  const { data: activities } = useQuery({
-    queryKey: ['activities_dropdown_expenses', activeYear?.id],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('activities')
-        .select('id, name')
-        .eq('academic_year_id', activeYear?.id || '');
-      if (error) throw error;
-      return data || [];
-    },
-    enabled: !!activeYear?.id && isDialogOpen,
   });
 
   const saveMutation = useMutation({
@@ -178,12 +159,9 @@ export default function ExpensesPage() {
           transaction_date: new Date().toISOString().split('T')[0],
           academic_year_id: activeYear.id,
           amount: payload.amount,
-          expense_category: payload.expense_category,
           category: payload.expense_category,
-          vendor_recipient: payload.vendor_recipient.trim() || null,
           vendor: payload.vendor_recipient.trim() || null,
           description: payload.description.trim(),
-          activity_id: payload.activity_id || null,
           status: 'POSTED',
           recorded_by: user?.id,
         },
@@ -200,7 +178,6 @@ export default function ExpensesPage() {
         amount: 50000,
         vendor_recipient: '',
         description: '',
-        activity_id: '',
       });
       setFormError(null);
     },
@@ -210,11 +187,14 @@ export default function ExpensesPage() {
   });
 
   const filteredExpenses = (expenses || []).filter((item) => {
+    const v = item.vendor || '';
+    const d = item.description || '';
+    const r = item.reference_number || '';
     const matchesSearch =
-      (item.vendor_recipient && item.vendor_recipient.toLowerCase().includes(search.toLowerCase())) ||
-      item.description.toLowerCase().includes(search.toLowerCase()) ||
-      item.reference_number.toLowerCase().includes(search.toLowerCase());
-    const matchesCat = filterCategory === 'ALL' || item.expense_category === filterCategory;
+      v.toLowerCase().includes(search.toLowerCase()) ||
+      d.toLowerCase().includes(search.toLowerCase()) ||
+      r.toLowerCase().includes(search.toLowerCase());
+    const matchesCat = filterCategory === 'ALL' || item.category === filterCategory;
     return matchesSearch && matchesCat;
   });
 
@@ -345,22 +325,17 @@ export default function ExpensesPage() {
                   </TableCell>
                   <TableCell>
                     <p className="font-semibold text-sm text-[#191B19]">
-                      {item.vendor_recipient || 'Pihak Ketiga'}
+                      {item.vendor || 'Pihak Ketiga'}
                     </p>
-                    <p className="text-[11px] text-stone-500">{formatDate(item.created_at)}</p>
+                    <p className="text-[11px] text-stone-500">{formatDate(item.transaction_date || item.created_at)}</p>
                   </TableCell>
                   <TableCell>
                     <Badge variant="outline" className="text-xs">
-                      {item.expense_category}
+                      {item.category}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-xs text-stone-600 max-w-xs truncate">
                     {item.description}
-                    {item.activity?.name && (
-                      <span className="block text-[10px] text-[#174C3C] font-semibold mt-0.5">
-                        Acara: {item.activity.name}
-                      </span>
-                    )}
                   </TableCell>
                   <TableCell className="text-right font-bold text-sm text-red-600">
                     -{formatCurrency(item.amount)}
@@ -444,26 +419,6 @@ export default function ExpensesPage() {
                 onChange={(e) => setFormData({ ...formData, vendor_recipient: e.target.value })}
                 className="text-sm"
               />
-            </div>
-
-            <div className="space-y-1">
-              <Label className="text-xs font-semibold text-stone-700">Terkait Kegiatan (Opsional)</Label>
-              <Select
-                value={formData.activity_id}
-                onValueChange={(val) => setFormData({ ...formData, activity_id: val })}
-              >
-                <SelectTrigger className="text-xs">
-                  <SelectValue placeholder="Pilih kegiatan jika ada..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="">Bukan Kegiatan Tertentu (Rutin)</SelectItem>
-                  {(activities || []).map((a) => (
-                    <SelectItem key={a.id} value={a.id}>
-                      {a.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
             </div>
 
             <div className="space-y-1">

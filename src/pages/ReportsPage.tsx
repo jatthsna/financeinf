@@ -58,10 +58,11 @@ export default function ReportsPage() {
           id,
           reference_number,
           amount,
-          income_category,
-          source_payer,
+          category,
+          source,
           description,
           status,
+          date,
           created_at
         `)
         .eq('academic_year_id', activeYear.id)
@@ -74,10 +75,11 @@ export default function ReportsPage() {
           id,
           reference_number,
           amount,
-          expense_category,
-          vendor_recipient,
+          category,
+          vendor,
           description,
           status,
+          transaction_date,
           created_at
         `)
         .eq('academic_year_id', activeYear.id)
@@ -176,9 +178,9 @@ export default function ReportsPage() {
       reportData.incomes.forEach((i) => {
         rows.push([
           sanitize(i.reference_number),
-          sanitize(i.created_at.split('T')[0]),
-          sanitize(i.source_payer),
-          sanitize(i.income_category),
+          sanitize((i.date || i.created_at).split('T')[0]),
+          sanitize(i.source || i.source_payer || '-'),
+          sanitize(i.category || i.income_category || '-'),
           sanitize(i.amount),
         ]);
       });
@@ -188,9 +190,9 @@ export default function ReportsPage() {
       reportData.expenses.forEach((e) => {
         rows.push([
           sanitize(e.reference_number),
-          sanitize(e.created_at.split('T')[0]),
-          sanitize(e.vendor_recipient || '-'),
-          sanitize(e.expense_category),
+          sanitize((e.transaction_date || e.created_at).split('T')[0]),
+          sanitize(e.vendor || e.vendor_recipient || '-'),
+          sanitize(e.category || e.expense_category || '-'),
           sanitize(e.description),
           sanitize(e.amount),
         ]);
@@ -487,9 +489,9 @@ export default function ReportsPage() {
                 {reportData?.incomes.map((i: any) => (
                   <TableRow key={i.id}>
                     <TableCell className="font-mono text-xs">{i.reference_number}</TableCell>
-                    <TableCell className="text-xs">{formatDate(i.created_at)}</TableCell>
-                    <TableCell className="font-semibold text-xs text-stone-900">{i.source_payer}</TableCell>
-                    <TableCell><Badge variant="outline" className="text-[10px]">{i.income_category}</Badge></TableCell>
+                    <TableCell className="text-xs">{formatDate(i.date || i.created_at)}</TableCell>
+                    <TableCell className="font-semibold text-xs text-stone-900">{i.source || i.source_payer || '-'}</TableCell>
+                    <TableCell><Badge variant="outline" className="text-[10px]">{i.category || i.income_category}</Badge></TableCell>
                     <TableCell className="text-right font-bold text-xs text-emerald-800">+{formatCurrency(i.amount)}</TableCell>
                   </TableRow>
                 ))}
@@ -516,9 +518,9 @@ export default function ReportsPage() {
                 {reportData?.expenses.map((e: any) => (
                   <TableRow key={e.id}>
                     <TableCell className="font-mono text-xs">{e.reference_number}</TableCell>
-                    <TableCell className="text-xs">{formatDate(e.created_at)}</TableCell>
-                    <TableCell className="font-semibold text-xs text-stone-900">{e.vendor_recipient || '-'}</TableCell>
-                    <TableCell><Badge variant="outline" className="text-[10px]">{e.expense_category}</Badge></TableCell>
+                    <TableCell className="text-xs">{formatDate(e.transaction_date || e.created_at)}</TableCell>
+                    <TableCell className="font-semibold text-xs text-stone-900">{e.vendor || e.vendor_recipient || '-'}</TableCell>
+                    <TableCell><Badge variant="outline" className="text-[10px]">{e.category || e.expense_category}</Badge></TableCell>
                     <TableCell className="text-xs text-stone-600 max-w-xs truncate">{e.description}</TableCell>
                     <TableCell className="text-right font-bold text-xs text-red-600">-{formatCurrency(e.amount)}</TableCell>
                   </TableRow>

@@ -35,7 +35,7 @@ interface CashAccount {
   account_name: string;
   account_type: 'CASH' | 'BANK' | 'QRIS';
   account_number: string | null;
-  opening_balance: number;
+  opening_balance?: number;
   current_balance: number;
   is_active: boolean;
   created_at: string;
@@ -126,7 +126,6 @@ export default function AccountsPage() {
           account_name: payload.account_name.trim(),
           account_type: payload.account_type,
           account_number: payload.account_number.trim() || null,
-          opening_balance: payload.opening_balance,
           current_balance: payload.opening_balance,
           is_active: true,
           created_by: user?.id,
@@ -262,9 +261,9 @@ export default function AccountsPage() {
                 </CardHeader>
                 <CardContent className="space-y-2 pt-0">
                   <div className="p-3 rounded-lg bg-stone-50 border border-stone-100">
-                    <span className="text-[11px] text-stone-500">Saldo Awal Buku:</span>
+                    <span className="text-[11px] text-stone-500">Saldo Saat Ini:</span>
                     <p className="text-sm font-semibold text-stone-800">
-                      {formatCurrency(acc.opening_balance)}
+                      {formatCurrency(acc.current_balance ?? acc.opening_balance ?? 0)}
                     </p>
                   </div>
                 </CardContent>

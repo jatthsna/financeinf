@@ -80,12 +80,12 @@ export default function CashBookPage() {
           .eq('status', 'APPROVED'),
         supabase
           .from('income_records')
-          .select('id, amount, income_category, source_payer, description, created_at, reference_number')
+          .select('id, amount, category, source, description, date, created_at, reference_number')
           .eq('academic_year_id', yearId)
           .in('status', ['APPROVED', 'POSTED']),
         supabase
           .from('expenses')
-          .select('id, amount, expense_category, vendor_recipient, description, created_at, reference_number')
+          .select('id, amount, category, vendor, description, transaction_date, created_at, reference_number')
           .eq('academic_year_id', yearId)
           .in('status', ['APPROVED', 'POSTED']),
       ]);
@@ -112,11 +112,11 @@ export default function CashBookPage() {
       (incomesRes.data || []).forEach((inc: any) => {
         entries.push({
           id: inc.id,
-          date: inc.created_at,
+          date: inc.date || inc.created_at,
           refNumber: inc.reference_number || 'INC-REC',
           type: 'INCOME',
-          category: inc.income_category || 'Pendapatan Lain',
-          description: inc.description || `Penerimaan dari ${inc.source_payer || 'Pihak Ketiga'}`,
+          category: inc.category || 'Pendapatan Lain',
+          description: inc.description || (inc.source ? `Penerimaan dari ${inc.source}` : 'Penerimaan Lain'),
           account: 'Kas Prodi',
           amountIn: Number(inc.amount),
           amountOut: 0,
@@ -127,11 +127,11 @@ export default function CashBookPage() {
       (expensesRes.data || []).forEach((exp: any) => {
         entries.push({
           id: exp.id,
-          date: exp.created_at,
+          date: exp.transaction_date || exp.created_at,
           refNumber: exp.reference_number || 'EXP-BBN',
           type: 'EXPENSE',
-          category: exp.expense_category || 'Pengeluaran',
-          description: exp.description || `Pengeluaran kepada ${exp.vendor_recipient || 'Penerima'}`,
+          category: exp.category || 'Pengeluaran',
+          description: exp.description || (exp.vendor ? `Pengeluaran kepada ${exp.vendor}` : 'Pengeluaran Operasional'),
           account: 'Kas Pengeluaran',
           amountIn: 0,
           amountOut: Number(exp.amount),
