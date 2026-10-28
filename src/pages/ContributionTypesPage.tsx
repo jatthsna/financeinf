@@ -43,6 +43,10 @@ interface ContributionTypeItem {
   start_date: string | null;
   end_date: string | null;
   created_at: string;
+  related_activity_id?: string | null;
+  activity?: {
+    name: string;
+  };
 }
 
 export default function ContributionTypesPage() {
@@ -65,6 +69,7 @@ export default function ContributionTypesPage() {
     is_mandatory: boolean;
     start_date: string;
     end_date: string;
+    related_activity_id: string | null;
   }>({
     name: '',
     description: '',
@@ -74,15 +79,35 @@ export default function ContributionTypesPage() {
     is_mandatory: true,
     start_date: '',
     end_date: '',
+    related_activity_id: null,
   });
   const [formError, setFormError] = useState<string | null>(null);
+
+  // Fetch activities for linking
+  const { data: activitiesList } = useQuery({
+    queryKey: ['activities_dropdown_contributions', activeYear?.id],
+    queryFn: async () => {
+      if (!activeYear?.id) return [];
+      const { data, error } = await supabase
+        .from('activities')
+        .select('id, name, status')
+        .eq('academic_year_id', activeYear.id)
+        .order('name');
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!activeYear?.id,
+  });
 
   const { data: contributionTypes, isLoading } = useQuery({
     queryKey: ['contribution_types', activeYear?.id],
     queryFn: async () => {
       let query = supabase
         .from('contribution_types')
-        .select('*')
+        .select(`
+          *,
+          activity:activities!related_activity_id(name)
+        `)
         .order('created_at', { ascending: false });
 
       if (activeYear?.id) {
@@ -110,6 +135,7 @@ export default function ContributionTypesPage() {
         academic_year_id: activeYear.id,
         start_date: payload.start_date || null,
         end_date: payload.end_date || null,
+        related_activity_id: payload.related_activity_id || null,
         created_by: user?.id,
       };
 
@@ -159,6 +185,7 @@ export default function ContributionTypesPage() {
       is_mandatory: true,
       start_date: '',
       end_date: '',
+      related_activity_id: null,
     });
     setEditingItem(null);
     setFormError(null);
@@ -180,6 +207,7 @@ export default function ContributionTypesPage() {
       is_mandatory: item.is_mandatory,
       start_date: item.start_date || '',
       end_date: item.end_date || '',
+      related_activity_id: item.related_activity_id || null,
     });
     setFormError(null);
     setIsDialogOpen(true);
@@ -305,6 +333,11 @@ export default function ContributionTypesPage() {
                       ) : (
                         <Badge variant="outline" className="text-[10px] bg-stone-100 text-stone-600">
                           Sukarela
+                        </Badge>
+                      )}
+                      {item.activity?.name && (
+                        <Badge variant="outline" className="text-[10px] bg-blue-50 text-blue-700 border-blue-200">
+                          Kegiatan: {item.activity.name}
                         </Badge>
                       )}
                     </div>
@@ -506,6 +539,29 @@ export default function ContributionTypesPage() {
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                 className="text-sm"
               />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-stone-700 flex items-center justify-between">
+                <span>Tautkan ke Program Kegiatan (Opsional)</span>
+                <span className="text-[10px] text-stone-400 font-normal">Sinkronisasi pemasukan otomatis</span>
+              </Label>
+              <Select
+                value={formData.related_activity_id || 'NONE'}
+                onValueChange={(val) => setFormData({ ...formData, related_activity_id: val === 'NONE' ? null : val })}
+              >
+                <SelectTrigger className="text-xs">
+                  <SelectValue placeholder="Pilih kegiatan terkait (jika ada)..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="NONE">-- Tidak Terikat Kegiatan Tertentu --</SelectItem>
+                  {(activitiesList || []).map((act: any) => (
+                    <SelectItem key={act.id} value={act.id}>
+                      {act.name} {act.status === 'ACTIVE' ? '(Aktif)' : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <DialogFooter className="pt-3 border-t border-stone-100">

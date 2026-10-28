@@ -15,6 +15,7 @@ import IncomePage from '@/pages/IncomePage';
 import ExpensesPage from '@/pages/ExpensesPage';
 import ActivitiesPage from '@/pages/ActivitiesPage';
 import AccountsPage from '@/pages/AccountsPage';
+import CashBookPage from '@/pages/CashBookPage';
 import ReportsPage from '@/pages/ReportsPage';
 import AcademicYearPage from '@/pages/AcademicYearPage';
 import UsersPage from '@/pages/UsersPage';
@@ -115,6 +116,14 @@ export default function App() {
           element={
             <ProtectedRoute roles={['ADMIN', 'BENDAHARA']}>
               <AccountsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="buku-kas"
+          element={
+            <ProtectedRoute roles={['ADMIN', 'BENDAHARA']}>
+              <CashBookPage />
             </ProtectedRoute>
           }
         />

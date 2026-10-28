@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { useAcademicYear } from '@/hooks/useAcademicYear';
 import { useAuth } from '@/hooks/useAuth';
-import { formatDate } from '@/lib/utils';
+import { formatDate, formatCurrency } from '@/lib/utils';
 import { PageHeader } from '@/components/ui/page-header';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -35,7 +35,20 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { UserPlus, Search, Users, Shield, CheckCircle2, XCircle, UserCheck } from 'lucide-react';
+import {
+  UserPlus,
+  Search,
+  Users,
+  Shield,
+  CheckCircle2,
+  XCircle,
+  UserCheck,
+  Receipt,
+  MessageCircle,
+  Wallet,
+  Clock,
+  ArrowRight,
+} from 'lucide-react';
 
 interface ProfileItem {
   id: string;
@@ -58,6 +71,7 @@ export default function UsersPage() {
 
   // Register / Add User Modal
   const [isAddUserOpen, setIsAddUserOpen] = useState(false);
+  const [selectedStudentForHistory, setSelectedStudentForHistory] = useState<ProfileItem | null>(null);
   const [formData, setFormData] = useState({
     full_name: '',
     nim: '',
@@ -66,6 +80,80 @@ export default function UsersPage() {
     autoEnrollActiveYear: true,
   });
   const [formError, setFormError] = useState<string | null>(null);
+
+  // Student financial history query
+  const { data: studentFinancials, isLoading: historyLoading } = useQuery({
+    queryKey: ['student_financials', selectedStudentForHistory?.id, activeYear?.id],
+    queryFn: async () => {
+      if (!selectedStudentForHistory?.id || !activeYear?.id) return null;
+
+      const [obligationsRes, paymentsRes] = await Promise.all([
+        supabase
+          .from('student_obligations')
+          .select(`
+            id,
+            amount,
+            paid_amount,
+            remaining_amount,
+            due_date,
+            status,
+            contribution_type:contribution_types!contribution_type_id(name, category)
+          `)
+          .eq('student_id', selectedStudentForHistory.id)
+          .eq('academic_year_id', activeYear.id)
+          .order('due_date', { ascending: true }),
+        supabase
+          .from('payments')
+          .select(`
+            id,
+            amount,
+            payment_method,
+            payment_date,
+            receipt_number,
+            status
+          `)
+          .or(`student_id.eq.${selectedStudentForHistory.id},payer_id.eq.${selectedStudentForHistory.id}`)
+          .eq('academic_year_id', activeYear.id)
+          .order('payment_date', { ascending: false }),
+      ]);
+
+      const obligations = (obligationsRes.data || []) as any[];
+      const payments = (paymentsRes.data || []) as any[];
+
+      const totalBilled = obligations.reduce((s, o) => s + Number(o.amount || 0), 0);
+      const totalPaid = obligations.reduce((s, o) => s + Number(o.paid_amount || 0), 0);
+      const totalArrears = obligations.reduce((s, o) => s + Number(o.remaining_amount || 0), 0);
+
+      return {
+        obligations,
+        payments,
+        totalBilled,
+        totalPaid,
+        totalArrears,
+      };
+    },
+    enabled: !!selectedStudentForHistory?.id && !!activeYear?.id,
+  });
+
+  const handleSendStudentWa = () => {
+    if (!selectedStudentForHistory || !studentFinancials) return;
+    const phone = selectedStudentForHistory.phone ? selectedStudentForHistory.phone.replace(/[^0-9]/g, '') : '';
+    const formattedPhone = phone.startsWith('0') ? '62' + phone.slice(1) : phone;
+    const name = selectedStudentForHistory.full_name;
+    const arrearsStr = formatCurrency(studentFinancials.totalArrears);
+
+    const message = encodeURIComponent(
+      `*PENGINGAT KAS INFORMATIKA UNUGHA*\n\n` +
+      `Halo Rekan *${name}*,\n` +
+      `Catatan administrasi kas Prodi Informatika mencatat total kewajiban iuran Anda yang belum lunas sebesar *${arrearsStr}*.\n\n` +
+      `Mohon segera melakukan konfirmasi pembayaran tunai ke Bendahara atau via QRIS pada portal:\n` +
+      `👉 https://kasinformatika.jat.web.id/\n\n` +
+      `_Terima kasih atas kerja samanya._`
+    );
+
+    const url = formattedPhone ? `https://wa.me/${formattedPhone}?text=${message}` : `https://wa.me/?text=${message}`;
+    window.open(url, '_blank');
+  };
 
   // Fetch all profiles
   const { data: users, isLoading } = useQuery({
@@ -319,6 +407,7 @@ export default function UsersPage() {
                 <TableHead className="font-semibold text-[#191B19]">Peran Otorisasi</TableHead>
                 <TableHead className="font-semibold text-[#191B19] text-center">Tahun {activeYear?.year_code}</TableHead>
                 <TableHead className="font-semibold text-[#191B19] text-center">Status Akun</TableHead>
+                <TableHead className="font-semibold text-[#191B19] text-center">Riwayat Kas</TableHead>
                 <TableHead className="font-semibold text-[#191B19] text-right">Kelola Akses</TableHead>
               </TableRow>
             </TableHeader>
@@ -368,6 +457,16 @@ export default function UsersPage() {
                           Dinonaktifkan
                         </Badge>
                       )}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setSelectedStudentForHistory(u)}
+                        className="text-xs h-7 border-stone-200 text-[#174C3C] hover:bg-emerald-50"
+                      >
+                        <Receipt className="mr-1 h-3.5 w-3.5" /> Riwayat Kas
+                      </Button>
                     </TableCell>
                     <TableCell className="text-right">
                       {/* Don't let users deactivate their own current admin account */}
@@ -503,6 +602,158 @@ export default function UsersPage() {
               </Button>
             </DialogFooter>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Student Financial History Modal */}
+      <Dialog
+        open={!!selectedStudentForHistory}
+        onOpenChange={(open) => !open && setSelectedStudentForHistory(null)}
+      >
+        <DialogContent className="max-w-2xl bg-white max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold text-[#191B19] flex items-center justify-between">
+              <span>Rekam Finansial: {selectedStudentForHistory?.full_name}</span>
+              <span className="text-xs font-mono font-normal text-stone-500">
+                NIM: {selectedStudentForHistory?.nim || '-'}
+              </span>
+            </DialogTitle>
+            <DialogDescription className="text-xs text-stone-500">
+              Rincian kewajiban iuran, tunggakan, dan riwayat pembayaran untuk TA {activeYear?.year_code}.
+            </DialogDescription>
+          </DialogHeader>
+
+          {historyLoading ? (
+            <div className="space-y-3 py-4">
+              <Skeleton className="h-16 w-full" />
+              <Skeleton className="h-32 w-full" />
+            </div>
+          ) : !studentFinancials ? (
+            <div className="py-6 text-center text-xs text-stone-500">Gagal memuat riwayat keuangan.</div>
+          ) : (
+            <div className="space-y-4 py-2">
+              {/* Financial KPI Cards */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="p-3 rounded-xl bg-stone-50 border border-stone-200">
+                  <span className="text-[10px] text-stone-500 uppercase font-semibold">Total Tagihan</span>
+                  <p className="text-sm font-bold text-stone-900 mt-0.5">
+                    {formatCurrency(studentFinancials.totalBilled)}
+                  </p>
+                </div>
+                <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200">
+                  <span className="text-[10px] text-emerald-700 uppercase font-semibold">Sudah Dibayar</span>
+                  <p className="text-sm font-bold text-emerald-800 mt-0.5">
+                    {formatCurrency(studentFinancials.totalPaid)}
+                  </p>
+                </div>
+                <div className="p-3 rounded-xl bg-red-50 border border-red-200">
+                  <span className="text-[10px] text-red-700 uppercase font-semibold">Sisa Tunggakan</span>
+                  <p className="text-sm font-bold text-red-700 mt-0.5">
+                    {formatCurrency(studentFinancials.totalArrears)}
+                  </p>
+                </div>
+              </div>
+
+              {/* Obligations list */}
+              <div>
+                <h4 className="text-xs font-bold text-stone-800 mb-2 uppercase tracking-wide">
+                  Daftar Tagihan & Kewajiban
+                </h4>
+                {studentFinancials.obligations.length === 0 ? (
+                  <p className="text-xs text-stone-400 italic">Belum ada tagihan diterbitkan untuk mahasiswa ini.</p>
+                ) : (
+                  <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                    {studentFinancials.obligations.map((ob: any) => (
+                      <div
+                        key={ob.id}
+                        className="flex items-center justify-between p-2.5 rounded-lg border border-stone-200 bg-stone-50/50 text-xs"
+                      >
+                        <div>
+                          <p className="font-semibold text-stone-800">{ob.contribution_type?.name || 'Iuran Kas'}</p>
+                          <p className="text-[11px] text-stone-500">
+                            Jatuh tempo: {ob.due_date ? formatDate(ob.due_date, 'short') : '-'}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-mono font-bold text-stone-900">
+                            {formatCurrency(Number(ob.amount))}
+                          </p>
+                          <Badge
+                            variant="outline"
+                            className={`text-[9px] ${
+                              ob.status === 'PAID'
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                : 'bg-red-50 text-red-700 border-red-200'
+                            }`}
+                          >
+                            {ob.status === 'PAID' ? 'Lunas' : `Sisa: ${formatCurrency(Number(ob.remaining_amount))}`}
+                          </Badge>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Payments history */}
+              <div>
+                <h4 className="text-xs font-bold text-stone-800 mb-2 uppercase tracking-wide">
+                  Riwayat Pembayaran Diterima
+                </h4>
+                {studentFinancials.payments.length === 0 ? (
+                  <p className="text-xs text-stone-400 italic">Belum ada pembayaran yang tercatat.</p>
+                ) : (
+                  <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                    {studentFinancials.payments.map((p: any) => (
+                      <div
+                        key={p.id}
+                        className="flex items-center justify-between p-2 rounded-lg border border-stone-200 bg-white text-xs"
+                      >
+                        <div>
+                          <span className="font-mono font-semibold text-stone-800">{p.receipt_number || 'KWT'}</span>
+                          <span className="text-[11px] text-stone-500 block">
+                            {formatDate(p.payment_date, 'short')} · {p.payment_method}
+                          </span>
+                        </div>
+                        <div className="text-right">
+                          <span className="font-mono font-bold text-emerald-700">
+                            +{formatCurrency(Number(p.amount))}
+                          </span>
+                          <span className="block text-[10px] text-stone-400">
+                            {p.status === 'APPROVED' ? 'Disetujui' : p.status}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <DialogFooter className="pt-3 border-t border-stone-100 flex items-center justify-between">
+                {studentFinancials.totalArrears > 0 ? (
+                  <Button
+                    onClick={handleSendStudentWa}
+                    size="sm"
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-8"
+                  >
+                    <MessageCircle className="w-3.5 h-3.5 mr-1" /> Kirim Pengingat WhatsApp
+                  </Button>
+                ) : (
+                  <span className="text-xs text-emerald-700 font-medium flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Tidak ada tunggakan
+                  </span>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSelectedStudentForHistory(null)}
+                  className="text-xs h-8"
+                >
+                  Tutup
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

@@ -94,6 +94,73 @@ export default function ActivitiesPage() {
     enabled: !!activeYear?.id,
   });
 
+  // Fetch linked contributions and obligations to connect student fee realization with activities
+  const { data: linkedContributions } = useQuery({
+    queryKey: ['activity_linked_contributions', activeYear?.id],
+    queryFn: async () => {
+      if (!activeYear?.id) return [];
+      const { data, error } = await supabase
+        .from('contribution_types')
+        .select(`
+          id,
+          name,
+          related_activity_id,
+          obligations:student_obligations(id, amount, paid_amount, remaining_amount, status)
+        `)
+        .eq('academic_year_id', activeYear.id);
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!activeYear?.id,
+  });
+
+  const getActivityFinancials = (act: ActivityItem) => {
+    // 1. Direct expenses linked to activity
+    const actualExpenses = (act.expenses ?? []).reduce((s, r) => s + Number(r.amount), 0);
+
+    // 2. Direct other incomes (sponsorships, donations)
+    const directIncome = (act.income ?? []).reduce((s, r) => s + Number(r.amount), 0);
+
+    // 3. Student fee contributions linked to this activity (by related_activity_id OR matching name)
+    const matchedTypes = (linkedContributions || []).filter((ct: any) =>
+      ct.related_activity_id === act.id ||
+      ct.name.toLowerCase().includes(act.name.toLowerCase()) ||
+      act.name.toLowerCase().includes(ct.name.toLowerCase())
+    );
+
+    let studentFeePaid = 0;
+    let studentFeeUnpaid = 0;
+    let totalTargetFee = 0;
+
+    matchedTypes.forEach((ct: any) => {
+      (ct.obligations || []).forEach((ob: any) => {
+        studentFeePaid += Number(ob.paid_amount || 0);
+        studentFeeUnpaid += Number(ob.remaining_amount || 0);
+        totalTargetFee += Number(ob.amount || 0);
+      });
+    });
+
+    const totalIncome = directIncome + studentFeePaid;
+    const netBalance = totalIncome - actualExpenses;
+    const plannedBudget = (act.budgets ?? []).reduce((s, r) => s + Number(r.budgeted_amount), 0);
+    const budgetRemaining = plannedBudget - actualExpenses;
+    const feeCollectionRate = totalTargetFee > 0 ? Math.round((studentFeePaid / totalTargetFee) * 100) : 0;
+
+    return {
+      plannedBudget,
+      actualExpenses,
+      directIncome,
+      studentFeePaid,
+      studentFeeUnpaid,
+      totalTargetFee,
+      totalIncome,
+      netBalance,
+      budgetRemaining,
+      feeCollectionRate,
+      matchedTypes,
+    };
+  };
+
   const saveMutation = useMutation({
     mutationFn: async (payload: typeof formData) => {
       if (!activeYear?.id) throw new Error('Tahun akademik belum dipilih');
@@ -204,19 +271,7 @@ export default function ActivitiesPage() {
       ) : (
         <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
           {activities.map((act) => {
-            const plannedBudget = (act.budgets || []).reduce(
-              (sum, b) => sum + Number(b.budgeted_amount || 0),
-              0
-            );
-            const actualExpenses = (act.expenses || []).reduce(
-              (sum, e) => sum + Number(e.amount || 0),
-              0
-            );
-            const actualIncome = (act.income || []).reduce(
-              (sum, i) => sum + Number(i.amount || 0),
-              0
-            );
-            const remainingBudget = plannedBudget - actualExpenses;
+            const f = getActivityFinancials(act);
 
             return (
               <Card
@@ -250,28 +305,47 @@ export default function ActivitiesPage() {
                   </CardHeader>
 
                   <CardContent className="space-y-3 pt-0">
-                    {/* Financial summary breakdown */}
-                    <div className="rounded-lg bg-stone-50 p-3 border border-stone-100 space-y-2 text-xs">
-                      <div className="flex justify-between items-center text-stone-600">
+                    {/* Financial summary breakdown connecting Iuran & Expenses */}
+                    <div className="rounded-xl bg-stone-50 p-3.5 border border-stone-100 space-y-2 text-xs">
+                      {f.totalTargetFee > 0 && (
+                        <div className="pb-2 border-b border-stone-200/70 space-y-1.5">
+                          <div className="flex justify-between items-center text-stone-600">
+                            <span className="font-semibold text-[#174C3C]">Target Iuran Mahasiswa:</span>
+                            <strong className="text-stone-900">{formatCurrency(f.totalTargetFee)}</strong>
+                          </div>
+                          <div className="w-full bg-stone-200 rounded-full h-1.5 overflow-hidden">
+                            <div
+                              className="bg-emerald-600 h-1.5 rounded-full"
+                              style={{ width: `${Math.min(f.feeCollectionRate, 100)}%` }}
+                            />
+                          </div>
+                          <div className="flex justify-between text-[10px] text-stone-500">
+                            <span>Terkumpul: {formatCurrency(f.studentFeePaid)} ({f.feeCollectionRate}%)</span>
+                            <span className="text-red-600 font-medium">Tunggakan: {formatCurrency(f.studentFeeUnpaid)}</span>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="flex justify-between items-center text-stone-600 pt-1">
                         <span>Pagu Anggaran (Rencana):</span>
-                        <strong className="text-stone-900">{formatCurrency(plannedBudget)}</strong>
+                        <strong className="text-stone-900">{formatCurrency(f.plannedBudget)}</strong>
                       </div>
                       <div className="flex justify-between items-center text-red-600">
                         <span className="flex items-center gap-1">
                           <ArrowDownRight className="h-3.5 w-3.5" /> Realisasi Belanja:
                         </span>
-                        <strong className="font-bold">{formatCurrency(actualExpenses)}</strong>
+                        <strong className="font-bold">{formatCurrency(f.actualExpenses)}</strong>
                       </div>
                       <div className="flex justify-between items-center text-[#174C3C]">
                         <span className="flex items-center gap-1">
-                          <ArrowUpRight className="h-3.5 w-3.5" /> Pemasukan Acara:
+                          <ArrowUpRight className="h-3.5 w-3.5" /> Total Kas Masuk Acara:
                         </span>
-                        <strong className="font-bold">{formatCurrency(actualIncome)}</strong>
+                        <strong className="font-bold">{formatCurrency(f.totalIncome)}</strong>
                       </div>
                       <div className="pt-2 border-t border-stone-200 flex justify-between items-center text-stone-800 font-bold">
-                        <span>Sisa Pagu Anggaran:</span>
-                        <span className={remainingBudget < 0 ? 'text-red-600' : 'text-emerald-700'}>
-                          {formatCurrency(remainingBudget)}
+                        <span>Sisa Saldo Kas Acara:</span>
+                        <span className={f.netBalance < 0 ? 'text-red-600 font-black' : 'text-emerald-700 font-black'}>
+                          {formatCurrency(f.netBalance)}
                         </span>
                       </div>
                     </div>

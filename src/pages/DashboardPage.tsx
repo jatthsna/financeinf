@@ -22,8 +22,24 @@ import {
   Plus,
   FileText,
   Users,
+  BookOpen,
+  MessageCircle,
+  Send,
+  Sparkles,
+  ShieldCheck,
+  AlertTriangle,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import {
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+} from 'recharts';
 
 // ── Admin Dashboard ───────────────────────────────────────────────
 function AdminDashboard() {
@@ -111,56 +127,358 @@ function AdminDashboard() {
     enabled: !!activeYear?.id,
   });
 
+  const { data: topArrears } = useQuery({
+    queryKey: ['admin-top-arrears', activeYear?.id],
+    queryFn: async () => {
+      const yearId = activeYear?.id;
+      if (!yearId) return [];
+      const { data } = await supabase
+        .from('student_obligations')
+        .select(`
+          id,
+          amount,
+          remaining_amount,
+          due_date,
+          status,
+          student:profiles!student_id(full_name, nim, phone),
+          contribution_type:contribution_types!contribution_type_id(name)
+        `)
+        .eq('academic_year_id', yearId)
+        .in('status', ['UNPAID', 'PARTIALLY_PAID', 'OVERDUE'])
+        .order('remaining_amount', { ascending: false })
+        .limit(5);
+      return data || [];
+    },
+    enabled: !!activeYear?.id,
+  });
+
+  const { data: monthlyChartData } = useQuery({
+    queryKey: ['admin-monthly-flow', activeYear?.id],
+    queryFn: async () => {
+      const yearId = activeYear?.id;
+      if (!yearId) return [];
+
+      const [paymentsRes, expensesRes] = await Promise.all([
+        supabase
+          .from('payments')
+          .select('amount, created_at, payment_date')
+          .eq('academic_year_id', yearId)
+          .eq('status', 'APPROVED'),
+        supabase
+          .from('expenses')
+          .select('amount, created_at')
+          .eq('academic_year_id', yearId)
+          .in('status', ['APPROVED', 'POSTED']),
+      ]);
+
+      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+      const now = new Date();
+      const result: { month: string; Pemasukan: number; Pengeluaran: number }[] = [];
+
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const y = d.getFullYear();
+        const m = d.getMonth();
+        const label = monthNames[m];
+
+        const inc = (paymentsRes.data || [])
+          .filter((p: any) => {
+            const pd = new Date(p.payment_date || p.created_at);
+            return pd.getFullYear() === y && pd.getMonth() === m;
+          })
+          .reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0);
+
+        const exp = (expensesRes.data || [])
+          .filter((e: any) => {
+            const ed = new Date(e.created_at);
+            return ed.getFullYear() === y && ed.getMonth() === m;
+          })
+          .reduce((sum: number, e: any) => sum + Number(e.amount || 0), 0);
+
+        result.push({
+          month: label,
+          Pemasukan: inc,
+          Pengeluaran: exp,
+        });
+      }
+
+      return result;
+    },
+    enabled: !!activeYear?.id,
+  });
+
+  const handleSendWaReminder = (item: any) => {
+    const studentName = item.student?.full_name || 'Mahasiswa';
+    const typeName = item.contribution_type?.name || 'Iuran Kas';
+    const amountStr = formatCurrency(Number(item.remaining_amount));
+    const dueDateStr = item.due_date ? formatDate(item.due_date, 'short') : 'segera';
+    const rawPhone = item.student?.phone || '';
+    const cleanPhone = rawPhone.replace(/[^0-9]/g, '');
+    const phone = cleanPhone.startsWith('0') ? '62' + cleanPhone.slice(1) : cleanPhone;
+
+    const message = encodeURIComponent(
+      `*PENGINGAT RESMI KAS INFORMATIKA UNUGHA*\n\n` +
+      `Halo Sdr/i *${studentName}*,\n` +
+      `Bendahara Kas Prodi Informatika menginfokan bahwa kewajiban iuran *${typeName}* sebesar *${amountStr}* (Jatuh tempo: ${dueDateStr}) belum tercatat lunas.\n\n` +
+      `Pembayaran dapat disetorkan secara tunai ke Bendahara atau melalui QRIS resmi di portal prodi:\n` +
+      `👉 https://kasinformatika.jat.web.id/\n\n` +
+      `_Terima kasih atas partisipasinya demi kelancaran kegiatan mahasiswa._`
+    );
+
+    const waUrl = phone ? `https://wa.me/${phone}?text=${message}` : `https://wa.me/?text=${message}`;
+    window.open(waUrl, '_blank');
+  };
+
+  const totalBilled = (stats?.totalIncome ?? 0) + (stats?.totalTunggakan ?? 0);
+  const collectionRate = totalBilled > 0 ? Math.round(((stats?.totalIncome ?? 0) / totalBilled) * 100) : 0;
+
   if (statsLoading) {
     return <DashboardSkeleton />;
   }
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Dashboard Administrator"
-        description="Ringkasan eksekutif keuangan Program Studi Informatika"
-      />
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <PageHeader
+          title="Dashboard Administrator"
+          description={`Ringkasan eksekutif dan analitik keuangan Prodi Informatika (TA ${activeYear?.year_code || '2026/2027'})`}
+        />
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          <Button variant="outline" size="sm" asChild className="border-stone-200">
+            <Link to="/buku-kas">
+              <BookOpen className="w-4 h-4 mr-1.5 text-[#174C3C]" /> Buku Kas
+            </Link>
+          </Button>
+          <Button size="sm" asChild className="bg-[#174C3C] hover:bg-[#123d30] text-white">
+            <Link to="/tagihan">
+              <Plus className="w-4 h-4 mr-1.5" /> Terbitkan Tagihan
+            </Link>
+          </Button>
+        </div>
+      </div>
+
+      {/* Executive Financial Health & Collection Progress Banner */}
+      <Card className="border-stone-200/80 bg-gradient-to-r from-emerald-900 to-[#174C3C] text-white shadow-md overflow-hidden relative">
+        <div className="p-5 md:p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative z-10">
+          <div className="space-y-2 max-w-xl">
+            <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-white/10 text-emerald-200 text-xs font-semibold backdrop-blur-xs">
+              <ShieldCheck className="w-3.5 h-3.5" /> Status Keuangan: Terkelola & Transparan
+            </div>
+            <h2 className="text-xl md:text-2xl font-bold tracking-tight text-white">
+              Sistem Kas Program Studi Informatika
+            </h2>
+            <p className="text-xs md:text-sm text-emerald-100/90 leading-relaxed">
+              Total potensi penerimaan kas tahun akademik ini tercatat sebesar{' '}
+              <span className="font-bold text-white underline underline-offset-4">{formatCurrency(totalBilled)}</span>. 
+              Pantau realisasi pembayaran dan tunggakan secara presisi.
+            </p>
+          </div>
+
+          <div className="w-full md:w-72 bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/15 space-y-3">
+            <div className="flex items-center justify-between text-xs font-semibold">
+              <span className="text-emerald-100">Capaian Realisasi Iuran</span>
+              <span className="text-white text-sm font-black">{collectionRate}%</span>
+            </div>
+            <div className="w-full bg-black/20 rounded-full h-2.5 overflow-hidden">
+              <div
+                className="bg-emerald-400 h-2.5 rounded-full transition-all duration-700 ease-out"
+                style={{ width: `${Math.min(collectionRate, 100)}%` }}
+              />
+            </div>
+            <div className="flex items-center justify-between text-[11px] text-emerald-200/80 pt-1 border-t border-white/10">
+              <span>Masuk: {formatCurrency(stats?.totalIncome ?? 0)}</span>
+              <span>Tunggakan: {formatCurrency(stats?.totalTunggakan ?? 0)}</span>
+            </div>
+          </div>
+        </div>
+      </Card>
 
       {/* Stat Cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
-          title="Total Pemasukan"
+          title="Total Pemasukan Kas"
           value={formatCurrency(stats?.totalIncome ?? 0)}
           icon={<TrendingUp className="h-5 w-5 text-emerald-700" />}
-          className="border-l-4 border-l-[#174C3C]"
+          className="border-l-4 border-l-[#174C3C] shadow-xs"
         />
         <StatCard
           title="Total Pengeluaran"
           value={formatCurrency(stats?.totalExpense ?? 0)}
           icon={<TrendingDown className="h-5 w-5 text-red-600" />}
-          className="border-l-4 border-l-red-500"
+          className="border-l-4 border-l-red-500 shadow-xs"
         />
         <StatCard
-          title="Saldo Kas Bersih"
+          title="Saldo Kas Bersih Riil"
           value={formatCurrency(stats?.balance ?? 0)}
           icon={<Wallet className="h-5 w-5 text-[#174C3C]" />}
-          className="border-l-4 border-l-emerald-600"
+          className="border-l-4 border-l-emerald-600 shadow-xs"
         />
         <StatCard
           title="Total Kewajiban Tertunda"
           value={formatCurrency(stats?.totalTunggakan ?? 0)}
           subtitle={`${stats?.pendingQrisCount ?? 0} QRIS menanti verifikasi`}
           icon={<Clock className="h-5 w-5 text-amber-600" />}
-          className="border-l-4 border-l-amber-500"
+          className="border-l-4 border-l-amber-500 shadow-xs"
         />
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        {/* Recent Transactions */}
-        <Card>
+      {/* Interactive Charts & Financial Flow */}
+      <div className="grid gap-6 lg:grid-cols-3">
+        {/* Monthly Cash Flow Chart */}
+        <Card className="lg:col-span-2 border-stone-200/80 bg-white shadow-xs">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <div>
+              <CardTitle className="text-base font-semibold text-[#191B19]">
+                Arus Kas Bulanan (Tren Pemasukan vs Beban)
+              </CardTitle>
+              <p className="text-xs text-stone-500 mt-0.5">Analisis perbandingan kas masuk dan keluar 6 bulan terakhir</p>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-4">
+            <div className="h-64 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={monthlyChartData || []} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorPemasukan" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.4} />
+                      <stop offset="95%" stopColor="#10b981" stopOpacity={0.0} />
+                    </linearGradient>
+                    <linearGradient id="colorPengeluaran" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#ef4444" stopOpacity={0.4} />
+                      <stop offset="95%" stopColor="#ef4444" stopOpacity={0.0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0ed" />
+                  <XAxis dataKey="month" stroke="#888888" fontSize={11} tickLine={false} axisLine={false} />
+                  <YAxis stroke="#888888" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(val: any) => `Rp${Number(val) / 1000}k`} />
+                  <Tooltip
+                    formatter={(value: any) => [formatCurrency(Number(value)), '']}
+                    contentStyle={{ borderRadius: '12px', border: '1px solid #e2e2dd', fontSize: '12px' }}
+                  />
+                  <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
+                  <Area type="monotone" dataKey="Pemasukan" stroke="#059669" strokeWidth={2.5} fillOpacity={1} fill="url(#colorPemasukan)" />
+                  <Area type="monotone" dataKey="Pengeluaran" stroke="#dc2626" strokeWidth={2.5} fillOpacity={1} fill="url(#colorPengeluaran)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Quick Operations & Shortcuts */}
+        <Card className="border-stone-200/80 bg-white shadow-xs">
+          <CardHeader>
             <CardTitle className="text-base font-semibold text-[#191B19]">
-              Transaksi Kas & Pembayaran Terbaru
+              Menu Operasional Utama
             </CardTitle>
+            <p className="text-xs text-stone-500">Akses cepat tugas bendahara & administrator</p>
+          </CardHeader>
+          <CardContent className="space-y-2.5">
+            <Button variant="outline" className="w-full justify-start border-stone-200 hover:bg-emerald-50/60 hover:border-emerald-200 text-xs" asChild>
+              <Link to="/pembayaran">
+                <CreditCard className="mr-2.5 h-4 w-4 text-[#174C3C]" /> Verifikasi Pembayaran & QRIS
+              </Link>
+            </Button>
+            <Button variant="outline" className="w-full justify-start border-stone-200 hover:bg-emerald-50/60 hover:border-emerald-200 text-xs" asChild>
+              <Link to="/tagihan">
+                <FileText className="mr-2.5 h-4 w-4 text-[#174C3C]" /> Terbitkan Tagihan Massal
+              </Link>
+            </Button>
+            <Button variant="outline" className="w-full justify-start border-stone-200 hover:bg-emerald-50/60 hover:border-emerald-200 text-xs" asChild>
+              <Link to="/buku-kas">
+                <BookOpen className="mr-2.5 h-4 w-4 text-[#174C3C]" /> Buka Buku Kas & Mutasi
+              </Link>
+            </Button>
+            <Button variant="outline" className="w-full justify-start border-stone-200 hover:bg-emerald-50/60 hover:border-emerald-200 text-xs" asChild>
+              <Link to="/pengeluaran">
+                <Plus className="mr-2.5 h-4 w-4 text-[#174C3C]" /> Catat Beban Pengeluaran
+              </Link>
+            </Button>
+            <Button variant="outline" className="w-full justify-start border-stone-200 hover:bg-emerald-50/60 hover:border-emerald-200 text-xs" asChild>
+              <Link to="/laporan">
+                <TrendingUp className="mr-2.5 h-4 w-4 text-[#174C3C]" /> Laporan Pertanggungjawaban (PDF)
+              </Link>
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Bottom Grid: Top Arrears (with WhatsApp Action) + Recent Transactions */}
+      <div className="grid gap-6 lg:grid-cols-2">
+        {/* Top Pending Arrears with WhatsApp Reminder */}
+        <Card className="border-stone-200/80 bg-white shadow-xs">
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <div>
+              <CardTitle className="text-base font-semibold text-[#191B19]">
+                Tunggakan Terbesar Mahasiswa
+              </CardTitle>
+              <p className="text-xs text-stone-500 mt-0.5">Kirim pengingat resmi langsung ke kontak WhatsApp mahasiswa</p>
+            </div>
+            <Button variant="ghost" size="sm" asChild>
+              <Link to="/tagihan">
+                Semua Tagihan <ArrowRight className="ml-1 h-3.5 w-3.5" />
+              </Link>
+            </Button>
+          </CardHeader>
+          <CardContent>
+            {!topArrears?.length ? (
+              <EmptyState
+                icon={<CheckCircle2 className="h-9 w-9 text-emerald-600" />}
+                title="Semua kewajiban tertib"
+                description="Tidak ada tunggakan mahasiswa yang belum diselesaikan pada periode aktif ini."
+              />
+            ) : (
+              <div className="space-y-3">
+                {topArrears.map((item: any) => (
+                  <div
+                    key={item.id}
+                    className="flex flex-col sm:flex-row sm:items-center justify-between rounded-xl border border-stone-200/80 p-3 bg-stone-50/40 gap-2.5"
+                  >
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-[#191B19]">
+                          {item.student?.full_name || 'Mahasiswa'}
+                        </span>
+                        <span className="text-[10px] font-mono text-stone-400">
+                          {item.student?.nim || '-'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-stone-500 mt-0.5">
+                        {item.contribution_type?.name} · Jatuh Tempo: {item.due_date ? formatDate(item.due_date, 'short') : '-'}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center justify-between sm:justify-end gap-2.5 pt-2 sm:pt-0 border-t sm:border-0 border-stone-200/60">
+                      <span className="text-xs font-bold font-mono text-red-600">
+                        {formatCurrency(Number(item.remaining_amount))}
+                      </span>
+                      <Button
+                        size="sm"
+                        onClick={() => handleSendWaReminder(item)}
+                        className="h-8 px-2.5 text-xs bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs"
+                        title="Kirim pengingat format resmi via WhatsApp"
+                      >
+                        <MessageCircle className="w-3.5 h-3.5 mr-1" /> Ingatkan WA
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Recent Transactions */}
+        <Card className="border-stone-200/80 bg-white shadow-xs">
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <div>
+              <CardTitle className="text-base font-semibold text-[#191B19]">
+                Transaksi Masuk Terbaru
+              </CardTitle>
+              <p className="text-xs text-stone-500 mt-0.5">Riwayat setoran kas dan QRIS terakhir</p>
+            </div>
             <Button variant="ghost" size="sm" asChild>
               <Link to="/pembayaran">
-                Lihat Semua <ArrowRight className="ml-1 h-4 w-4" />
+                Lihat Semua <ArrowRight className="ml-1 h-3.5 w-3.5" />
               </Link>
             </Button>
           </CardHeader>
@@ -173,27 +491,27 @@ function AdminDashboard() {
               </div>
             ) : !recentTransactions?.length ? (
               <EmptyState
-                icon={<FileText className="h-10 w-10 text-stone-400" />}
+                icon={<FileText className="h-9 w-9 text-stone-400" />}
                 title="Belum ada transaksi"
                 description="Catatan pembayaran kas dan QRIS terbaru akan otomatis tersinkronisasi di sini."
               />
             ) : (
-              <div className="space-y-3">
-                {recentTransactions.map((tx: any) => (
+              <div className="space-y-2.5">
+                {recentTransactions.slice(0, 5).map((tx: any) => (
                   <div
                     key={tx.id}
-                    className="flex items-center justify-between rounded-lg border border-stone-200/80 p-3 bg-stone-50/50"
+                    className="flex items-center justify-between rounded-xl border border-stone-200/80 p-3 bg-stone-50/40"
                   >
                     <div>
-                      <p className="text-sm font-semibold text-[#191B19]">
-                        {tx.profiles?.full_name ?? tx.payer?.full_name ?? tx.student?.full_name ?? 'Mahasiswa'}
+                      <p className="text-xs font-bold text-[#191B19]">
+                        {tx.payer?.full_name ?? tx.profiles?.full_name ?? 'Mahasiswa'}
                       </p>
-                      <p className="text-xs text-stone-500">
-                        {formatDate(tx.created_at, 'with-time')} · Metode: {tx.payment_method} · No: {tx.receipt_number || '-'}
+                      <p className="text-[11px] text-stone-500 mt-0.5">
+                        {formatDate(tx.created_at, 'with-time')} · {tx.payment_method} · {tx.receipt_number || '-'}
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-bold text-[#191B19]">
+                      <span className="text-xs font-bold text-[#191B19] font-mono">
                         {formatCurrency(Number(tx.amount))}
                       </span>
                       <PaymentStatusBadge status={tx.status} />
@@ -202,37 +520,6 @@ function AdminDashboard() {
                 ))}
               </div>
             )}
-          </CardContent>
-        </Card>
-
-        {/* Quick Actions */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base font-semibold text-[#191B19]">
-              Aksi Operasional Cepat
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-3 sm:grid-cols-2">
-            <Button variant="outline" className="justify-start border-stone-200 hover:bg-stone-50" asChild>
-              <Link to="/pembayaran">
-                <CreditCard className="mr-2 h-4 w-4 text-[#174C3C]" /> Verifikasi & Catat Kas
-              </Link>
-            </Button>
-            <Button variant="outline" className="justify-start border-stone-200 hover:bg-stone-50" asChild>
-              <Link to="/tagihan">
-                <FileText className="mr-2 h-4 w-4 text-[#174C3C]" /> Buat Kewajiban / Tagihan
-              </Link>
-            </Button>
-            <Button variant="outline" className="justify-start border-stone-200 hover:bg-stone-50" asChild>
-              <Link to="/pengeluaran">
-                <Plus className="mr-2 h-4 w-4 text-[#174C3C]" /> Catat Beban Pengeluaran
-              </Link>
-            </Button>
-            <Button variant="outline" className="justify-start border-stone-200 hover:bg-stone-50" asChild>
-              <Link to="/pengguna">
-                <Users className="mr-2 h-4 w-4 text-[#174C3C]" /> Kelola Data Mahasiswa & Staf
-              </Link>
-            </Button>
           </CardContent>
         </Card>
       </div>

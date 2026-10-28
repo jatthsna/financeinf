@@ -11,6 +11,7 @@ import {
   Calendar,
   Building,
   BarChart,
+  BookOpen,
   GraduationCap,
   Users,
   Settings,
@@ -67,6 +68,7 @@ const navSections: NavSection[] = [
     title: 'Manajemen',
     roles: ['ADMIN', 'BENDAHARA'],
     items: [
+      { label: 'Buku Kas & Mutasi', icon: BookOpen, href: '/buku-kas', roles: ['ADMIN', 'BENDAHARA'] },
       { label: 'Kegiatan & Anggaran', icon: Calendar, href: '/kegiatan', roles: ['ADMIN', 'BENDAHARA'] },
       { label: 'Rekening & Kas', icon: Building, href: '/rekening', roles: ['ADMIN', 'BENDAHARA'] },
       { label: 'Laporan Keuangan', icon: BarChart, href: '/laporan', roles: ['ADMIN', 'BENDAHARA'] },
